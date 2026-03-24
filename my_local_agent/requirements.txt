@@ -1,0 +1,52 @@
+# --- Core API e Sistema ---
+fastapi
+uvicorn
+python-multipart
+python-dotenv
+psutil
+
+# --- Agente AI e LangChain ---
+langchain
+langgraph
+langchain-ollama
+langchain-openai
+langchain-community
+
+# --- Strumenti di Ricerca e Web ---
+duckduckgo-search
+beautifulsoup4
+
+# --- Messaggistica e Bot ---
+python-telegram-bot
+telethon
+httpx
+
+# --- Visione e Voce ---
+faster-whisper
+Pillow
+
+# --- Memoria a Lungo Termine ---
+qdrant-client
+langchain-qdrant
+
+# --- Task in Background e Trigger ---
+apscheduler
+pynput
+
+# --- Automazione Sistema e Documenti ---
+yagmail
+fpdf2
+
+# --- Automazione Browser AI ---
+playwright
+browser-use
+
+# --- Integrazione Google Workspace ---
+google-api-python-client
+google-auth-httplib2
+google-auth-oauthlib
+
+# --- Integrazione Ecosistema Apple (iCloud) ---
+imap-tools
+caldav
+vobject

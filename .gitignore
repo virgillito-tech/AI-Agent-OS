@@ -1,0 +1,55 @@
+cat << 'EOF' > .gitignore
+# =========================
+# AMBIENTI E SEGRETI
+# =========================
+ai_agent/
+venv/
+env/
+.env
+.env.*
+credentials.json
+token.json
+
+# =========================
+# PYTHON (BACKEND)
+# =========================
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+build/
+dist/
+*.spec
+
+# =========================
+# NODE.JS E NEXT.JS (FRONTEND)
+# =========================
+node_modules/
+.next/
+out/
+npm-debug.log*
+
+# =========================
+# TAURI (APP NATIVA)
+# =========================
+src-tauri/target/
+src-tauri/bin/
+
+# =========================
+# AGENTE, DATABASE E MEMORIA
+# =========================
+sandbox/
+temp_uploads/
+qdrant_db/
+.workspace_path
+*.log
+chat_history.json
+history.json
+
+# =========================
+# SISTEMA OPERATIVO E IDE
+# =========================
+.DS_Store
+.vscode/
+.idea/
+EOF

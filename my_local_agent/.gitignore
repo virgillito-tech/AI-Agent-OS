@@ -1,0 +1,38 @@
+# Ambienti virtuali
+ai_agent/
+venv/
+env/
+.env
+__pycache__/
+*.pyc
+
+# Node.js (Frontend)
+node_modules/
+.next/
+out/
+build/
+
+# Mac OS
+.DS_Store
+
+# File generati dall'Agente e Sandbox
+sandbox/
+temp_uploads/
+*.log
+
+# File di Build Python (PyInstaller)
+build/
+dist/
+*.spec
+
+# Database e Memoria
+qdrant_db/
+.workspace_path
+
+# IDE
+.vscode/
+.idea/
+
+#file
+credentials.json
+token.json

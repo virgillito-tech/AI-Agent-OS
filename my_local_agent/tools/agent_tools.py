@@ -100,15 +100,26 @@ def esplora_file_sistema(percorso: str = ".") -> str:
         return f"Errore di accesso alla cartella: {e}"
 
 @tool
-def ricerca_web_affidabile(query: str) -> str:
+def ricerca_web_affidabile(query: str, solo_notizie_recenti: bool = False) -> str:
     """
     Esegue una ricerca su Internet.
-    OBBLIGATORIO per: notizie recenti, risultati sportivi, previsioni meteo, eventi attuali.
-    Usa query brevi e concise (es. 'risultati champions league 11 marzo 2026').
+    IMPOSTA 'solo_notizie_recenti=True' SE l'utente chiede "ultime novità", "notizie di oggi" o eventi recenti.
+    Usa query brevi e concise.
     """
-    print(f"\n🌐 [TOOL: Ricerca Web] Avvio ricerca per: '{query}'")
+    print(f"\n🌐 [TOOL: Ricerca Web] Avvio ricerca per: '{query}' (Recenti: {solo_notizie_recenti})")
     try:
-        url = f"https://html.duckduckgo.com/html/?q={urllib.parse.quote(query)}"
+        from datetime import datetime
+        
+        # Iniettiamo silenziosamente il mese e l'anno corrente nella query per fregare la SEO dei vecchi articoli
+        mese_anno_corrente = datetime.now().strftime('%B %Y') 
+        query_arricchita = f"{query} {mese_anno_corrente}" if solo_notizie_recenti else query
+        
+        url = f"https://html.duckduckgo.com/html/?q={urllib.parse.quote(query_arricchita)}"
+        
+        # Aggiungiamo il filtro temporale di DuckDuckGo: df=m (ultimo mese)
+        if solo_notizie_recenti:
+            url += "&df=m"
+            
         headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"}
         
         res = requests.get(url, headers=headers, timeout=(3.0, 7.0))
@@ -117,7 +128,6 @@ def ricerca_web_affidabile(query: str) -> str:
         soup = BeautifulSoup(res.text, "html.parser")
         
         risultati_formattati = []
-        # Cerchiamo i blocchi dei risultati
         for div in soup.find_all("div", class_="result__body", limit=6):
             titolo_tag = div.find("a", class_="result__a")
             snippet_tag = div.find("a", class_="result__snippet")
@@ -125,15 +135,13 @@ def ricerca_web_affidabile(query: str) -> str:
             if titolo_tag and snippet_tag:
                 titolo = titolo_tag.text.strip()
                 link = titolo_tag.get('href', 'Link non disponibile')
-                # DuckDuckGo usa dei redirect, li puliamo se possibile
                 if "uddg=" in link:
                     link = urllib.parse.unquote(link.split("uddg=")[1].split("&")[0])
-                    
                 snippet = snippet_tag.text.strip()
                 risultati_formattati.append(f"Titolo: {titolo}\nLink: {link}\nEstratto: {snippet}")
         
         if not risultati_formattati:
-            return "Nessun risultato testuale trovato."
+            return "Nessun risultato testuale trovato per questo periodo."
             
         final_text = "\n---\n".join(risultati_formattati)
         print(f"🌐 [TOOL: Ricerca Web] ✅ Trovati {len(risultati_formattati)} risultati.")
@@ -574,26 +582,28 @@ async def programma_task_autonomo(istruzione: str, minuti_attesa: int = 0, ora_r
 
 @tool
 async def navigatore_web_integrato(istruzioni: str) -> str:
-    """STRUMENTO UFFICIALE: Navigatore Web Nativo (Browser Use)."""
+    """STRUMENTO UFFICIALE: Navigatore Web Nativo (Browser Use).
+    Usa questo tool SOLO se devi compiere AZIONI COMPLESSE su un sito web (es. riempire un form, cliccare bottoni, navigare dentro un portale specifico).
+    ATTENZIONE: Se devi solo cercare notizie, informazioni, risultati sportivi o meteo, USA IL TOOL 'ricerca_web_affidabile' CHE È MOLTO PIÙ VELOCE E SICURO.
+    """
     print(f"🌐 [BROWSER AI] Avvio navigazione per: {istruzioni}")
     try:
         from browser_use import Agent
         import config
 
         engine = getattr(config, "ACTIVE_ENGINE", "ollama")
+        url = getattr(config, "BASE_URL_TEXT", "http://localhost:11434").rstrip("/") + "/v1"
 
-        if engine == "mlx":
-            url = getattr(config, "MLX_BASE_URL", "http://localhost:8080").rstrip("/") + "/v1"
-            modello = getattr(config, "MLX_TEXT_MODEL_NAME", "mlx-community/Qwen3.5-9B-MLX-4bit")
-        else:
-            url = getattr(config, "BASE_URL_TEXT", "http://localhost:11434").rstrip("/") + "/v1"
-            modello = getattr(config, "TEXT_MODEL_NAME", "qwen3.5:9b")
+        # IL TRUCCO: Usiamo SEMPRE il modello Coder per guidare il browser!
+        modello_pilota = "qwen2.5-coder:7b"
+        
+        print(f"🌐 [BROWSER AI] Affido il volante al modello specializzato: {modello_pilota}")
 
         llm_guida = SafeBrowserLLM(
             base_url=url,
             api_key="ollama", 
-            model=modello,
-            temperature=0.0,
+            model=modello_pilota,
+            temperature=0.0, # Temperatura a zero per non fargli inventare nulla
         )
 
         browser_agent = Agent(task=istruzioni, llm=llm_guida)
@@ -601,15 +611,12 @@ async def navigatore_web_integrato(istruzioni: str) -> str:
 
         risultato = history.final_result()
         if not risultato:
-            return "Navigazione completata, ma nessun dato testuale restituito dalla pagina."
+            return "Navigazione completata, ma nessun dato testuale restituito."
 
         print(f"🌐 [BROWSER AI] ✅ Navigazione completata.")
         return f"Risultato della navigazione web:\n{risultato}"
 
     except Exception as e:
-        import traceback
-        errore_stack = traceback.format_exc()
-        print(f"\n🌐 [BROWSER AI] ❌ ERRORE CRITICO INTERNO:\n{errore_stack}\n")
         return f"Errore critico durante la navigazione: {str(e)}"
     
 
@@ -730,6 +737,32 @@ def leggi_documento(file_path: str) -> str:
         return f"Impossibile leggere il documento: {str(e)}"
 
 # NOTA: _is_write_permitted rimosso per evitare crash di LangChain
+
+@tool
+def leggi_task_programmati() -> str:
+    """
+    Legge e restituisce l'elenco di tutti i task futuri (promemoria, ricerche automatiche, ecc.) programmati nel sistema.
+    Usa ESCLUSIVAMENTE questo tool se l'utente ti chiede "quali task hai programmati?" o "ci sono appuntamenti in programma?".
+    È SEVERAMENTE VIETATO usare la memoria a lungo termine (Qdrant) per i task futuri.
+    """
+    print("📅 [TOOL: Scheduler] Lettura dei task in programma SQLite...")
+    try:
+        from core.scheduler import scheduler
+        jobs = scheduler.get_jobs()
+        if not jobs:
+            return "Non ci sono task o promemoria programmati al momento."
+        
+        lista_task = []
+        for job in jobs:
+            orario = job.next_run_time.strftime('%Y-%m-%d %H:%M:%S') if job.next_run_time else "In pausa"
+            dettagli = job.args[0] if job.args else "Nessun dettaglio istruzione"
+            lista_task.append(f"- ⏰ Quando: [{orario}] | ⚙️ Azione: {dettagli}")
+        
+        return "Ecco i task attualmente programmati e attivi nel sistema:\n" + "\n".join(lista_task)
+    except Exception as e:
+        return f"Errore durante la lettura dei task: {e}"
+    
+
 tools = [
     ottieni_data_ora_sistema,
     ricerca_web_affidabile,
@@ -757,5 +790,6 @@ tools = [
     leggi_tutte_le_chat,
     leggi_pagina_web,
     crea_documento_pdf,
-    leggi_documento
+    leggi_documento, 
+    leggi_task_programmati
 ]

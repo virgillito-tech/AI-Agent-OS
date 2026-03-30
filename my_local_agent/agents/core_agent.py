@@ -15,7 +15,8 @@ from tools.agent_tools import (
     apri_sito_web_universale, invia_email_universale, genera_immagine_locale, leggi_ultime_email,
     invia_email_google, leggi_prossimi_eventi_calendario, _is_write_permitted, esplora_file_sistema,
     leggi_file_sistema, scrivi_o_copia_file, leggi_whatsapp, leggi_telegram_personale, 
-    scatta_e_analizza_schermo, esegui_azione_mouse_tastiera, navigatore_web_integrato, leggi_tutte_le_chat, leggi_pagina_web, crea_documento_pdf, leggi_documento
+    scatta_e_analizza_schermo, esegui_azione_mouse_tastiera, navigatore_web_integrato, leggi_tutte_le_chat, leggi_pagina_web, crea_documento_pdf, 
+    leggi_documento, leggi_task_programmati
 )
 
 # ---------------------------------------------------------
@@ -105,7 +106,8 @@ def get_agent_executor(task_type: str = "reasoning"):
         ottieni_data_ora_sistema,
         delegato_automazione_ui,
         navigatore_web_integrato,
-        leggi_pagina_web
+        leggi_pagina_web,
+        leggi_task_programmati
     ]
     
     # main.py inietta GIÀ il system prompt in modo nativo, quindi restituiamo l'agente pulito!

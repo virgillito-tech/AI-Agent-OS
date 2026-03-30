@@ -9,25 +9,20 @@ import re
 import sys
 import shutil
 
-# --- FIX PERCORSI COMPILATI (MAC/WINDOWS) ---
-APP_DIR = os.path.expanduser("~/Documents/AI_OS_Data")
-os.makedirs(APP_DIR, exist_ok=True)
-os.chdir(APP_DIR)
-
 # Le app GUI del Mac non sanno dove siano i programmi. Glielo diciamo noi!
 os.environ["PATH"] += os.pathsep + "/usr/local/bin" + os.pathsep + "/opt/homebrew/bin"
 
-# PyInstaller nasconde i file (come la cartella prompts) in una temp-folder. Li copiamo.
+# PyInstaller: se avviato come eseguibile, sposta la cartella prompts
 if getattr(sys, 'frozen', False):
     base_path = sys._MEIPASS
     src_prompts = os.path.join(base_path, "prompts")
-    dst_prompts = os.path.join(APP_DIR, "prompts")
+    dst_prompts = os.path.join(os.getcwd(), "prompts")
     if os.path.exists(src_prompts) and not os.path.exists(dst_prompts):
         shutil.copytree(src_prompts, dst_prompts)
 
 from dotenv import load_dotenv
-# Carica le variabili d'ambiente dalla nuova cartella sicura
-load_dotenv(os.path.join(APP_DIR, ".env"))
+# Carica le variabili d'ambiente direttamente dalla cartella di progetto
+load_dotenv(".env")
 
 from pydantic import BaseModel
 import tempfile
@@ -118,8 +113,13 @@ async def proactive_guardian_loop():
                 testo_risposta = res.content.strip()
                 print(f"🛡️ [DEBUG GUARDIANO] Analisi cruda del LLM: {testo_risposta}")
                 
-                # 4. CONTROLLO ALLARME
-                if "NESSUNA_URGENZA" not in testo_risposta.upper():
+                # 4. CONTROLLO ALLARME PIÙ ROBUSTO
+                testo_check = testo_risposta.upper()
+                
+                # Lista di parole "sicure", incluse le storpiature tipiche
+                parole_sicure = ["NESSUNA_URGENZA", "NESSUN", "NESSEM", "NO_URGENZA", "NESSUNA URGENZA"]
+                
+                if not any(safe_word in testo_check for safe_word in parole_sicure):
                     print(f"🛡️ [GUARDIANO] 🚨 Urgenza rilevata! Invio notifica push a Telegram...")
                     token = os.getenv("TELEGRAM_TOKEN")
                     
@@ -141,8 +141,8 @@ async def proactive_guardian_loop():
         except Exception as e:
             print(f"🛡️ [GUARDIANO] ❌ Errore critico nel loop: {e}")
         
-        # Dorme per 15 minuti (900 secondi)
-        await asyncio.sleep(1200)
+        # Dorme per 30 minuti (1800 secondi)
+        await asyncio.sleep(1800)
 
 async def _gpu_polling_loop():
     global _gpu_percent
@@ -273,7 +273,7 @@ class EnvSettings(BaseModel):
 
 @app.get("/api/settings/env")
 async def get_env_settings():
-    env_path = os.path.join(APP_DIR, ".env")
+    env_path = ".env"
     # Inizializza con i valori vuoti/default del modello
     settings = EnvSettings().model_dump()
     if os.path.exists(env_path):
@@ -287,7 +287,7 @@ async def get_env_settings():
 
 @app.post("/api/settings/env")
 async def save_env_settings(data: EnvSettings):
-    env_path = os.path.join(APP_DIR, ".env")
+    env_path = ".env"
     # Scrive tutte le variabili in automatico
     with open(env_path, "w", encoding="utf-8") as f:
         for k, v in data.model_dump().items():

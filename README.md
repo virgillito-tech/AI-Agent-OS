@@ -1,4 +1,4 @@
-# 🛸 AI Agent OS (Versione 1.0)
+# AI Agent OS (Versione 1.0)
 
 Un Assistente Personale e vero e proprio "Sistema Operativo" AI **100% locale**. 
 A differenza dei classici chatbot, questo agente interagisce fisicamente con il tuo ambiente desktop, legge i tuoi file, naviga sul web e vigila in background, il tutto mantenendo i tuoi dati strettamente privati sul tuo hardware.

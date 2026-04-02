@@ -50,6 +50,9 @@ GLOBAL_HISTORY_FILE = "sandbox/global_chat_history.json"
 
 _gpu_percent: float = 0.0
 
+# --- LUCCHETTO PER LA MEMORIA (Quando il lucchetto è chiuso, chiunque altro provi a usare il modello AI dovrà mettersi in fila e aspettare in silenzio.) --- 
+ai_lock = asyncio.Lock()
+
 # --- IL GUARDIANO PROATTIVO (DAEMON) ---
 async def proactive_guardian_loop():
     print("🛡️ [GUARDIANO] Inizializzato. In attesa del primo ciclo (30s)...")
@@ -104,11 +107,13 @@ async def proactive_guardian_loop():
                     tiny_prompt = "Trova urgenze. Altrimenti scrivi NESSUNA_URGENZA."
                 
                 # 3. CHIAMATA DIRETTA E PURA AL LLM
-                llm = await get_llm(task_type="fast", temperature=0.0)
-                res = await llm.ainvoke([
-                    SystemMessage(content=tiny_prompt),
-                    HumanMessage(content=blocco_testo)
-                ])
+                print("🛡️ [GUARDIANO] Attendo che la VRAM sia libera...")
+                async with ai_lock:
+                    llm = await get_llm(task_type="fast", temperature=0.0)
+                    res = await llm.ainvoke([
+                        SystemMessage(content=tiny_prompt),
+                        HumanMessage(content=blocco_testo)
+                    ])
                 
                 testo_risposta = res.content.strip()
                 print(f"🛡️ [DEBUG GUARDIANO] Analisi cruda del LLM: {testo_risposta}")
@@ -470,55 +475,55 @@ async def chat_endpoint(
     langchain_messages = build_langchain_messages_from_global()
 
     async def event_generator():
-        try:
-            task_type = "fast" if mode == "fast" else "reasoning"
-            agent = await get_agent_executor(task_type=task_type)
-            inputs = {"messages": langchain_messages}
-            
-            yield f"data: {json.dumps({'type': 'status', 'content': '🧠 Avvio sistema cognitivo...'})}\n\n"
-
-            final_message_content = ""
-            
-            # --- NUOVO MOTORE DI STREAMING DEL RAGIONAMENTO IN TEMPO REALE ---
-            # astream(stream_mode="updates") emette un evento ogni volta che un Nodo (LLM o Tool) finisce
-            async for event in agent.astream(inputs, stream_mode="updates"):
-                if "agent" in event:
-                    # L'agente ha formulato un pensiero o deciso di usare un tool
-                    msg = event["agent"]["messages"][0]
-                    if hasattr(msg, "tool_calls") and msg.tool_calls:
-                        for tc in msg.tool_calls:
-                            tool_name = tc.get("name", "Sconosciuto")
-                            # Inviamo il pensiero al frontend!
-                            yield f"data: {json.dumps({'type': 'reasoning', 'content': f'🛠️ Chiamata strumento: {tool_name}'})}\n\n"
-                    elif msg.content:
-                        # Se non ci sono tool calls, questa è la risposta finale!
-                        final_message_content = msg.content
+        async with ai_lock: # <--- Il lucchetto blocca la RAM per te!
+            try:
+                task_type = "fast" if mode == "fast" else "reasoning"
+                agent = await get_agent_executor(task_type=task_type)
+                inputs = {"messages": langchain_messages}
                 
-                elif "tools" in event:
-                    # Un tool ha appena finito di lavorare e ha restituito i dati all'Agente
-                    yield f"data: {json.dumps({'type': 'reasoning', 'content': '✅ Tool completato. Analizzo i risultati...'})}\n\n"
+                yield f"data: {json.dumps({'type': 'status', 'content': '🧠 Avvio sistema cognitivo...'})}\n\n"
+                final_message_content = ""
+                
+                # --- NUOVO MOTORE DI STREAMING DEL RAGIONAMENTO IN TEMPO REALE ---
+                # astream(stream_mode="updates") emette un evento ogni volta che un Nodo (LLM o Tool) finisce
+                async for event in agent.astream(inputs, stream_mode="updates"):
+                    if "agent" in event:
+                        # L'agente ha formulato un pensiero o deciso di usare un tool
+                        msg = event["agent"]["messages"][0]
+                        if hasattr(msg, "tool_calls") and msg.tool_calls:
+                            for tc in msg.tool_calls:
+                                tool_name = tc.get("name", "Sconosciuto")
+                                # Inviamo il pensiero al frontend!
+                                yield f"data: {json.dumps({'type': 'reasoning', 'content': f'🛠️ Chiamata strumento: {tool_name}'})}\n\n"
+                        elif msg.content:
+                            # Se non ci sono tool calls, questa è la risposta finale!
+                            final_message_content = msg.content
+                    
+                    elif "tools" in event:
+                        # Un tool ha appena finito di lavorare e ha restituito i dati all'Agente
+                        yield f"data: {json.dumps({'type': 'reasoning', 'content': '✅ Tool completato. Analizzo i risultati...'})}\n\n"
 
-            yield f"data: {json.dumps({'type': 'status', 'content': '✍️ Scrittura completata.'})}\n\n"
-            
-            # Fallback di sicurezza se la stringa è vuota
-            if not final_message_content:
-                final_message_content = "Operazione terminata, ma nessun dato testuale restituito."
+                yield f"data: {json.dumps({'type': 'status', 'content': '✍️ Scrittura completata.'})}\n\n"
+                
+                # Fallback di sicurezza se la stringa è vuota
+                if not final_message_content:
+                    final_message_content = "Operazione terminata, ma nessun dato testuale restituito."
 
-            # Salviamo nella memoria storica
-            add_to_global_history("ai", final_message_content, source="web")
+                # Salviamo nella memoria storica
+                add_to_global_history("ai", final_message_content, source="web")
 
-            # Streamiamo la parola finale lettera per lettera (effetto digitazione)
-            chunk_size = 4
-            for i in range(0, len(final_message_content), chunk_size):
-                testo_parziale = final_message_content[i:i+chunk_size]
-                yield f"data: {json.dumps({'type': 'chunk', 'content': testo_parziale})}\n\n"
-                await asyncio.sleep(0.015) 
-            
-            yield f"data: {json.dumps({'type': 'final'})}\n\n"
+                # Streamiamo la parola finale lettera per lettera (effetto digitazione)
+                chunk_size = 4
+                for i in range(0, len(final_message_content), chunk_size):
+                    testo_parziale = final_message_content[i:i+chunk_size]
+                    yield f"data: {json.dumps({'type': 'chunk', 'content': testo_parziale})}\n\n"
+                    await asyncio.sleep(0.015) 
+                
+                yield f"data: {json.dumps({'type': 'final'})}\n\n"
 
-        except Exception as e:
-            yield f"data: {json.dumps({'type': 'error', 'content': f'Errore critico: {str(e)}'})}\n\n"
-        yield "data: [DONE]\n\n"
+            except Exception as e:
+                yield f"data: {json.dumps({'type': 'error', 'content': f'Errore critico: {str(e)}'})}\n\n"
+            yield "data: [DONE]\n\n"
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
@@ -537,8 +542,9 @@ async def chat_sync_endpoint(
         agent = await get_agent_executor(task_type=task_type)
         langchain_messages = build_langchain_messages_from_global()
         
-        inputs = {"messages": langchain_messages}
-        result = await agent.ainvoke(inputs)
+        async with ai_lock: # <--- Lucchetto anche qui
+            inputs = {"messages": langchain_messages}
+            result = await agent.ainvoke(inputs)
         
         final_message = ""
         if result and "messages" in result:

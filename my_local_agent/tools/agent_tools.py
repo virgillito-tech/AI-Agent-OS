@@ -25,20 +25,11 @@ from tools.google_tools import leggi_ultime_email, invia_email_google, leggi_pro
 from langchain_openai import ChatOpenAI
 from pydantic import Field
 
-# -------------------------------------------------------------
-# FIX INFORMATICO DEFINITIVO (Pydantic V2)
-# La classe personalizzata DEVE risiedere nel contesto globale.
-# In questo modo Pydantic la valida correttamente e non distrugge
-# i metodi asincroni nativi di LangChain (come .ainvoke).
-# -------------------------------------------------------------
+# --- FIX PYDANTIC V2 ---
 class SafeBrowserLLM(ChatOpenAI):
-    """LLM corazzato per aggirare i limiti di browser_use."""
     provider: str = Field(default="openai")
     tiktoken_model_name: str = Field(default="gpt-4o")
-
     def __setattr__(self, name, value):
-        # FIX INFORMATICO: Quando browser_use tenta di "hackerare" il metodo ainvoke 
-        # per tracciare i token, bypassiamo Pydantic e lo salviamo a basso livello.
         if name in ["ainvoke", "invoke"]:
             object.__setattr__(self, name, value)
         else:
@@ -155,27 +146,26 @@ def _get_vision_llm():
     from langchain_ollama import ChatOllama
     return ChatOllama(model=config.VISION_MODEL_NAME, temperature=0)
 
-def process_image(prompt_text: str, base64_image: str) -> str:
-    print(f"👁️ [TOOL: Visione] Analisi immagine in corso...")
-    vision_llm = _get_vision_llm()
-    system_instruction = "Sei un analista visivo. Traduci e descrivi in italiano."
-    full_prompt = f"{system_instruction}\n\nRichiesta: {prompt_text}"
+# --- TOOL VISIONE ASYNC (PER TURBOQUANT) ---
+async def process_image(prompt_text: str, base64_image: str) -> str:
+    print(f"👁️ [TOOL: Visione] Analisi immagine con TurboQuant...")
+    # Fondamentale l'await per attivare la cache compressa
+    vision_llm = await get_llm(task_type="reasoning") 
     message = HumanMessage(content=[
-        {"type": "text", "text": full_prompt},
+        {"type": "text", "text": f"Analista visivo: {prompt_text}"},
         {"type": "image_url", "image_url": f"data:image/jpeg;base64,{base64_image}"},
     ])
-    res = vision_llm.invoke([message]).content
-    print(f"👁️ [TOOL: Visione] Analisi completata.")
-    return res
+    res = await vision_llm.ainvoke([message])
+    return res.content
 
 @tool
-def analyze_local_image(image_path: str, user_prompt: str = "") -> str:
-    """Analizza una tavola manga o un'immagine locale."""
+async def analyze_local_image(image_path: str, user_prompt: str = "") -> str:
+    """Analizza immagini locali sfruttando TurboQuant."""
     try:
-        with open(image_path, "rb") as image_file:
-            image_base64 = base64.b64encode(image_file.read()).decode("utf-8")
-        return process_image(user_prompt, image_base64)
-    except Exception as e: return f"Errore analisi immagine: {e}"
+        with open(image_path, "rb") as f:
+            img_b64 = base64.b64encode(f.read()).decode("utf-8")
+        return await process_image(user_prompt, img_b64)
+    except Exception as e: return f"Errore: {e}"
 
 @tool
 def save_memory(informazione: str) -> str:
@@ -389,117 +379,65 @@ def gestisci_file_avanzato(azione: str, percorso_origine: str, percorso_destinaz
     except Exception as e:
         return f"Errore critico durante la modifica del file: {e}"
 
+# --- TOOL WHATSAPP (SINTASSI CORRETTA) ---
 @tool
-def leggi_whatsapp(nome_contatto: str) -> str:
-    """
-    Legge gli ultimi messaggi da una chat specifica di WhatsApp personale dell'utente.
-    """
-    print(f"🟢 [TOOL: WhatsApp] Tento di leggere la chat con: {nome_contatto}")
+async def leggi_whatsapp(nome_contatto: str) -> str:
+    """Legge gli ultimi messaggi da una chat WhatsApp personale."""
+    print(f"🟢 [TOOL: WhatsApp] Apertura chat: {nome_contatto}")
     try:
-        from playwright.sync_api import sync_playwright
-        import time
-        
+        from playwright.async_api import async_playwright
         user_data_dir = os.path.abspath(os.path.join("sandbox", "wa_session"))
         
-        with sync_playwright() as p:
-            browser = p.chromium.launch_persistent_context(
-                user_data_dir, 
-                headless=False 
-            )
-            page = browser.new_page()
-            page.goto("https://web.whatsapp.com/")
+        async with async_playwright() as p:
+            browser = await p.chromium.launch_persistent_context(user_data_dir, headless=False)
+            page = await browser.new_page()
+            await page.goto("https://web.whatsapp.com/")
+            await page.wait_for_selector('div[contenteditable="true"]', timeout=60000)
             
-            print("⏳ Attendo il caricamento di WhatsApp Web (o lo scan del QR)...")
-            page.wait_for_selector('div[contenteditable="true"]', timeout=60000)
-            
+            # FIX: Rimosso await davanti all'assegnazione
             search_box = page.locator('div[contenteditable="true"][data-tab="3"]')
-            search_box.fill(nome_contatto)
-            time.sleep(2)
-            page.keyboard.press("Enter")
-            time.sleep(3) 
+            await search_box.fill(nome_contatto)
+            await asyncio.sleep(1)
+            await page.keyboard.press("Enter")
+            await asyncio.sleep(2) 
             
-            messages = page.locator('div.message-in, div.message-out').all_inner_texts()
+            # FIX: await va solo davanti alla funzione asincrona .all_inner_texts()
+            messages = await page.locator('div.message-in, div.message-out').all_inner_texts()
             
-            browser.close()
-            
-            if not messages:
-                return f"Nessun messaggio trovato nella chat con {nome_contatto}."
-            
-            ultimi_msg = "\n".join(messages[-5:])
-            return f"Ultimi messaggi con {nome_contatto}:\n{ultimi_msg}"
-            
-    except Exception as e:
-        return f"Errore durante l'accesso a WhatsApp: {str(e)}. (L'utente potrebbe dover effettuare il login)."
+            await browser.close()
+            return "\n".join(messages[-5:]) if messages else "Nessun messaggio trovato."
+    except Exception as e: return f"Errore WhatsApp: {str(e)}"
 
+# --- TOOL TELEGRAM (NATIVO ASYNC - FIX DEFINITIVO) ---
 @tool
-def leggi_telegram_personale(nome_contatto_o_username: str) -> str:
-    """
-    Legge gli ultimi messaggi scambiati sull'account personale Telegram dell'utente con un contatto.
-    """
-    print(f"🔵 [TOOL: Telegram Personal] Lettura chat con: {nome_contatto_o_username}")
-    import asyncio
-    from telethon.sync import TelegramClient
-    
+async def leggi_telegram_personale(nome_contatto_o_username: str) -> str:
+    """Legge i messaggi Telegram in modalità asincrona senza conflitti di loop."""
+    from telethon import TelegramClient
+    print(f"🔵 [TOOL: Telegram] Lettura chat: {nome_contatto_o_username}")
     session_path = os.path.join("sandbox", "tg_personal_session")
     
-    def _run_telethon():
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        
-        client = TelegramClient(session_path, config.TG_API_ID, config.TG_API_HASH)
-        
-        with client:
-            messages = client.get_messages(nome_contatto_o_username, limit=5)
-            
-            if not messages:
-                return "Nessun messaggio trovato."
-                
-            res = []
-            for m in reversed(messages):
-                mittente = "Io" if m.out else nome_contatto_o_username
-                testo = m.message or "[Media/Non testuale]"
-                res.append(f"{mittente}: {testo}")
-                
-            return "\n".join(res)
-
+    # Usiamo il client asincrono correttamente dentro il loop esistente
+    client = TelegramClient(session_path, config.TG_API_ID, config.TG_API_HASH)
     try:
-        import concurrent.futures
-        with concurrent.futures.ThreadPoolExecutor() as pool:
-            future = pool.submit(_run_telethon)
-            return future.result(timeout=60)
+        async with client: # Questo gestisce connessione e avvio automaticamente
+            messages = await client.get_messages(nome_contatto_o_username, limit=5)
+            if not messages: return "Nessun messaggio trovato."
+            res = [f"{'Io' if m.out else nome_contatto_o_username}: {m.message}" for m in reversed(messages)]
+            return "\n".join(res)
     except Exception as e:
-        return f"Errore Telethon: {str(e)}"
+        return f"Errore Telegram: {str(e)}"
     
 @tool
-def scatta_e_analizza_schermo(domanda: str) -> str:
-    """
-    Scatta uno screenshot dello schermo attuale e lo fa analizzare al modello di Visione.
-    Usa questo tool per capire cosa c'è a schermo, trovare le coordinate (X, Y) di bottoni, icone o leggere testo visibile.
-    """
-    print(f"📸 [TOOL: Visione] Scatto screenshot in corso...")
+async def scatta_e_analizza_schermo(domanda: str) -> str:
+    """Scatta uno screenshot e lo analizza tramite TurboQuant."""
     try:
         with mss.mss() as sct:
-            monitor = sct.monitors[1]
-            screenshot_path = os.path.join("sandbox", "current_screen.png")
-            sct.shot(output=screenshot_path)
-
-        print(f"👁️ [TOOL: Visione] Analisi dell'immagine per: '{domanda}'")
-        
-        with open(screenshot_path, "rb") as image_file:
-            image_base64 = base64.b64encode(image_file.read()).decode("utf-8")
-        
-        vision_llm = _get_vision_llm()
-        system_instruction = "Sei un'AI specializzata in UI/UX e automazione desktop. Analizza lo screenshot fornito e rispondi alla domanda dell'utente. Se ti vengono chieste coordinate per cliccare, stima le coordinate X e Y approssimative in pixel (il monitor parte da X=0, Y=0 in alto a sinistra)."
-        
-        message = HumanMessage(content=[
-            {"type": "text", "text": f"{system_instruction}\n\nDomanda: {domanda}"},
-            {"type": "image_url", "image_url": f"data:image/jpeg;base64,{image_base64}"},
-        ])
-        
-        res = vision_llm.invoke([message]).content
-        return res
-    except Exception as e:
-        return f"Errore durante lo screenshot o l'analisi visiva: {e}"
+            path = os.path.join("sandbox", "current_screen.png")
+            sct.shot(output=path)
+        with open(path, "rb") as f:
+            img_base64 = base64.b64encode(f.read()).decode("utf-8")
+        return await process_image(domanda, img_base64)
+    except Exception as e: return f"Errore: {e}"
 
 @tool
 def esegui_azione_mouse_tastiera(azione: str, x: int = None, y: int = None, testo: str = None, tasto: str = None) -> str:
@@ -621,13 +559,15 @@ async def navigatore_web_integrato(istruzioni: str) -> str:
     
 
 @tool
-def leggi_tutte_le_chat() -> str:
+async def leggi_tutte_le_chat() -> str: # Diventa ASYNC
     """
     Legge in un colpo solo tutti i messaggi NON LETTI da Telegram e WhatsApp.
     Usa questo tool per avere un riepilogo rapido delle comunicazioni in sospeso dell'utente.
     """
     print("📱 [TOOL: Comunicazioni] Avvio lettura unificata chat...")
-    return chat_reader.leggi_tutte_le_chat()
+    # Eseguiamo la funzione in un executor per non bloccare il loop asincrono
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, chat_reader.leggi_tutte_le_chat)
 
 @tool
 def leggi_pagina_web(url: str) -> str:
@@ -654,7 +594,7 @@ def leggi_pagina_web(url: str) -> str:
         paragrafi = soup.find_all(['p', 'h1', 'h2', 'h3'])
         testo_pulito = "\n\n".join([p.get_text(strip=True) for p in paragrafi if p.get_text(strip=True)])
         
-        max_chars = 15000 
+        max_chars = 10000 
         if len(testo_pulito) > max_chars:
             testo_pulito = testo_pulito[:max_chars] + "\n\n...[TESTO TRONCATO]..."
             

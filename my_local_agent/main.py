@@ -104,7 +104,7 @@ async def proactive_guardian_loop():
                     tiny_prompt = "Trova urgenze. Altrimenti scrivi NESSUNA_URGENZA."
                 
                 # 3. CHIAMATA DIRETTA E PURA AL LLM
-                llm = get_llm(task_type="fast", temperature=0.0)
+                llm = await get_llm(task_type="fast", temperature=0.0)
                 res = await llm.ainvoke([
                     SystemMessage(content=tiny_prompt),
                     HumanMessage(content=blocco_testo)
@@ -332,9 +332,9 @@ async def compatta_cronologia_se_necessario():
                 prompt_compattazione = f.read()
         except Exception:
             prompt_compattazione = "Riassumi questa conversazione in modo conciso."
-            
+             
         try:
-            llm = get_llm(task_type="fast", temperature=0.0)
+            llm = await get_llm(task_type="fast", temperature=0.0)
             res = await llm.ainvoke([
                 SystemMessage(content=prompt_compattazione),
                 HumanMessage(content=testo_da_riassumere)
@@ -472,7 +472,7 @@ async def chat_endpoint(
     async def event_generator():
         try:
             task_type = "fast" if mode == "fast" else "reasoning"
-            agent = get_agent_executor(task_type=task_type)
+            agent = await get_agent_executor(task_type=task_type)
             inputs = {"messages": langchain_messages}
             
             yield f"data: {json.dumps({'type': 'status', 'content': '🧠 Avvio sistema cognitivo...'})}\n\n"
@@ -534,7 +534,7 @@ async def chat_sync_endpoint(
         add_to_global_history("user", message, source="telegram")
         
         task_type = "fast" if mode == "fast" else "reasoning"
-        agent = get_agent_executor(task_type=task_type)
+        agent = await get_agent_executor(task_type=task_type)
         langchain_messages = build_langchain_messages_from_global()
         
         inputs = {"messages": langchain_messages}

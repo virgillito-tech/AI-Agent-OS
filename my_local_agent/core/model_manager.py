@@ -15,14 +15,12 @@ OLLAMA_URL_MAC = "https://ollama.com/download/Ollama-darwin.zip"
 
 def is_ollama_running() -> bool:
     """Verifica se Ollama è già attivo nel sistema (evita conflitti di porta)."""
-    # 1. Controllo tramite la porta standard
     try:
         with socket.create_connection(("127.0.0.1", 11434), timeout=0.5):
             return True
     except OSError:
         pass
     
-    # 2. Controllo profondo tramite la lista dei processi
     for proc in psutil.process_iter(['name']):
         try:
             if proc.info['name'] and 'ollama' in proc.info['name'].lower():
@@ -47,7 +45,7 @@ async def installa_ollama_automaticamente():
     print("📦 [BOOTSTRAP] Ollama non trovato. Avvio download automatico in background...")
     
     if sistema == "darwin":
-        async with httpx.AsyncClient(timeout=300.0) as client: # Timeout lungo per il download
+        async with httpx.AsyncClient(timeout=300.0) as client:
             response = await client.get(OLLAMA_URL_MAC, follow_redirects=True)
             zip_path = os.path.join(app_data_dir, "ollama.zip")
             with open(zip_path, "wb") as f:
@@ -61,7 +59,6 @@ async def installa_ollama_automaticamente():
                 shutil.copy(inner_bin, target_path)
                 os.chmod(target_path, 0o755)
             
-            # Pulizia file temporanei
             os.remove(zip_path)
             shutil.rmtree(os.path.join(bin_dir, "Ollama.app"), ignore_errors=True)
             
@@ -89,30 +86,42 @@ async def start_engine(engine_type: str, model_name: str, port: int = 8080):
 
     stop_engine()
 
+    # --- PARAMETRI TURBOQUANT ---
+    # Recuperiamo il numero di bit dalla variabile d'ambiente o usiamo 3 come default
+    tq_bits = os.getenv("TURBOQUANT_BITS", "3")
+    env = os.environ.copy()
+
     try:
         if engine_type == "mlx":
-            comando = [sys.executable, "-m", "mlx_lm.server", "--model", model_name, "--port", str(port)]
-            print(f"⏳ Avvio server MLX in corso per il modello {model_name}...")
+            # Comando standard raccomandato dai log
+            comando = [sys.executable, "-m", "mlx_lm", "server", "--model", model_name, "--port", str(port)]
+            
+            try:
+                import mlx_turboquant
+                print(f"🚀 [BETA] TurboQuant ATTIVO: Ottimizzazione cache {tq_bits}-bit KV.")
+                # Passiamo i parametri tramite variabili d'ambiente, che le build beta leggono all'avvio
+                env["MLX_KV_CACHE_TYPE"] = "turboquant"
+                env["MLX_KV_CACHE_BITS"] = str(tq_bits)
+            except ImportError:
+                print("ℹ️ [MLX] Avvio server standard (TurboQuant non trovato).")
+            
+            print(f"⏳ Avvio server MLX per {model_name}...")
             check_port = port
             
         elif engine_type == "ollama":
-            # 1. Cerca globalmente
             ollama_path = shutil.which("ollama")
             
-            # 2. Cerca in percorsi Mac specifici
             if not ollama_path:
                 for p in ["/opt/homebrew/bin/ollama", "/usr/local/bin/ollama"]:
                     if os.path.exists(p):
                         ollama_path = p
                         break
                         
-            # 3. Cerca nell'installazione locale isolata
             if not ollama_path:
                 local_path = os.path.expanduser("~/Documents/AI_OS_Data/bin/ollama")
                 if os.path.exists(local_path):
                     ollama_path = local_path
             
-            # 4. Bootstrap (Scarica da Internet)
             if not ollama_path:
                 ollama_path = await installa_ollama_automaticamente()
 
@@ -120,21 +129,29 @@ async def start_engine(engine_type: str, model_name: str, port: int = 8080):
                 return False, "Impossibile trovare o installare Ollama automaticamente."
 
             comando = [ollama_path, "serve"]
+            
+            # Iniezione variabili d'ambiente per build sperimentali di Ollama (PR #15125)
+            if tq_bits:
+                print(f"🚀 [BETA] Iniezione variabili d'ambiente TurboQuant per il demone Ollama...")
+                env["OLLAMA_KV_CACHE_TYPE"] = "turboquant"
+                env["OLLAMA_KV_CACHE_BITS"] = tq_bits
+
             print(f"⏳ Avvio demone Ollama (eseguibile: {ollama_path})...")
             check_port = 11434
         else:
             return False, "Motore non supportato"
 
-        # Passiamo l'ambiente clonato per mantenere i PATH del Mac
-        env = os.environ.copy()
+
+        # Avviamo il processo ereditando nativamente i log nel terminale
         current_process = subprocess.Popen(
             comando, 
-            stdout=subprocess.DEVNULL, # Nascondiamo i log di Ollama per non sporcare il terminale
-            stderr=subprocess.DEVNULL,
-            env=env
+            stdout=None,
+            stderr=None, 
+            env=env 
         )
 
-        is_ready = wait_for_port(check_port, timeout=120)
+        # Aumentiamo il timeout da 120 a 600 secondi (10 minuti) per permettere il download
+        is_ready = wait_for_port(check_port, timeout=600)
 
         if is_ready:
             print(f"✅ Motore {engine_type} online e pronto sulla porta {check_port}!")

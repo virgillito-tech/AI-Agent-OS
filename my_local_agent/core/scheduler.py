@@ -1,6 +1,7 @@
 # core/scheduler.py
 import os
 import httpx
+import asyncio
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
 
@@ -12,6 +13,12 @@ jobstores = {
 
 # 2. Inizializziamo lo scheduler agganciandolo al database fisico
 scheduler = AsyncIOScheduler(jobstores=jobstores)
+
+def avvia_scheduler():
+    """Fa partire l'orologio interno del server."""
+    if not scheduler.running:
+        scheduler.start()
+        print("⏱️ [SCHEDULER] Motore dei Cron Job avviato con successo.")
 
 async def _esegui_task_programmato(messaggio: str, chat_id: str):
     """Questa funzione scatta esattamente quando scade il timer."""
@@ -28,11 +35,6 @@ async def _esegui_task_programmato(messaggio: str, chat_id: str):
         except Exception as e:
             print(f"⏰ [SCHEDULER] ❌ Errore invio Telegram: {e}")
 
-def avvia_scheduler():
-    """Fa partire l'orologio interno del server."""
-    if not scheduler.running:
-        scheduler.start()
-        print("⏱️ [SCHEDULER] Motore dei Cron Job avviato con successo.")
 
 async def _esegui_agente_in_background(prompt_istruzione: str, chat_id: str):
     """Sveglia l'agente in background, gli fa eseguire un task e manda il risultato."""
@@ -42,7 +44,11 @@ async def _esegui_agente_in_background(prompt_istruzione: str, chat_id: str):
         import os
         import httpx
         
-        agent = get_agent_executor(task_type="reasoning")
+        # --- FIX CRITICO PER TURBOQUANT ---
+        # Essendo get_agent_executor asincrona, è obbligatorio usare 'await'
+        agent = await get_agent_executor(task_type="reasoning")
+        
+        # Esecuzione asincrona dell'agente con TurboQuant attivo (cache 3-bit)
         res = await agent.ainvoke({"messages": [("user", prompt_istruzione)]})
         risultato_finale = res["messages"][-1].content
         
@@ -50,7 +56,8 @@ async def _esegui_agente_in_background(prompt_istruzione: str, chat_id: str):
         if token and chat_id:
             url = f"https://api.telegram.org/bot{token}/sendMessage"
             testo = f"🤖 *AI OS | Task Autonomo Completato:*\n\n{risultato_finale}"
-            async with httpx.AsyncClient(timeout=120.0) as client:
+            # Aumentiamo il timeout per permettere al 14B di elaborare contesti lunghi
+            async with httpx.AsyncClient(timeout=180.0) as client:
                 await client.post(url, data={"chat_id": chat_id, "text": testo, "parse_mode": "Markdown"})
                 
         print("⚙️ [AUTONOMIA] ✅ Risultato inviato con successo su Telegram!")

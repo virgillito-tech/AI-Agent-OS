@@ -44,12 +44,19 @@ async def _esegui_agente_in_background(prompt_istruzione: str, chat_id: str):
         import os
         import httpx
         
-        # --- FIX CRITICO PER TURBOQUANT ---
+        # --- FIX CRITICO PER TURBOQUANT E SCHEDULER LOOP ---
         # Essendo get_agent_executor asincrona, è obbligatorio usare 'await'
         agent = await get_agent_executor(task_type="reasoning")
         
+        # Iniettiamo un payload imperativo per evitare che il modello ri-programmi il task
+        payload_esecuzione = (
+            f"[SISTEMA: TRIGGER AUTOMATICO ATTIVATO] Il momento è ORA. Ignora le indicazioni temporali "
+            f"nel seguente task e RIFIUTATI ASSOLUTAMENTE di usare il tool Scheduler. "
+            f"Esegui IMMEDIATAMENTE questa operazione: {prompt_istruzione}"
+        )
+        
         # Esecuzione asincrona dell'agente con TurboQuant attivo (cache 3-bit)
-        res = await agent.ainvoke({"messages": [("user", prompt_istruzione)]})
+        res = await agent.ainvoke({"messages": [("user", payload_esecuzione)]})
         risultato_finale = res["messages"][-1].content
         
         token = os.getenv("TELEGRAM_TOKEN")

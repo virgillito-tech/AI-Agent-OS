@@ -1,30 +1,45 @@
 # tools/icloud_tools.py
 import os
 import datetime
+from imap_tools import MailBox, A
 from langchain_core.tools import tool
 from imap_tools import MailBox, AND
 import caldav
+
 
 ICLOUD_USER = os.getenv("ICLOUD_EMAIL")
 ICLOUD_PASS = os.getenv("ICLOUD_APP_PASSWORD") 
 
 @tool
 def leggi_email_icloud(max_risultati: int = 5) -> str:
-    """Legge le ultime email ricevute sull'account iCloud dell'utente."""
-    print("[TOOL: iCloud] Lettura Mail in corso...")
+    """Legge le email ricevute sull'account iCloud dell'utente nelle ultime 2 ore."""
+    print("[TOOL: iCloud] Lettura Mail in corso (Ultime 2 ore)...")
     try:
         if not ICLOUD_USER or not ICLOUD_PASS:
             return "Errore: Credenziali iCloud mancanti."
             
+        # Calcoliamo l'esatto momento di 2 ore fa (usando l'UTC per sicurezza con imap_tools)
+        ora_attuale = datetime.datetime.now(datetime.timezone.utc)
+        due_ore_fa = ora_attuale - datetime.timedelta(hours=2)
+            
         email_list = []
+        email_trovate = 0
+        
         # iCloud usa questo server IMAP standard
         with MailBox('imap.mail.me.com').login(ICLOUD_USER, ICLOUD_PASS) as mailbox:
-            # fetch() estrae le email. reverse=True prende le più recenti.
-            for msg in mailbox.fetch(limit=max_risultati, reverse=True):
-                email_list.append(f"Da: {msg.from_}\nOggetto: {msg.subject}\nData: {msg.date.strftime('%Y-%m-%d %H:%M')}\n")
+            # fetch() estrae le email. limit=20 dà margine per cercare le ultime arrivate, reverse=True prende le più recenti.
+            for msg in mailbox.fetch(limit=20, reverse=True):
+                # Filtriamo rigorosamente per le ultime 2 ore
+                if msg.date >= due_ore_fa:
+                    email_list.append(f"Da: {msg.from_}\nOggetto: {msg.subject}\nData: {msg.date.strftime('%Y-%m-%d %H:%M')}\n")
+                    email_trovate += 1
+                
+                # Fermati se hai raggiunto il massimo richiesto
+                if email_trovate >= max_risultati:
+                    break
                 
         if not email_list:
-            return "Nessuna nuova email su iCloud."
+            return "Nessuna nuova email su iCloud nelle ultime 2 ore."
         return "Ecco le ultime email da iCloud:\n\n" + "\n---\n".join(email_list)
     except Exception as e:
         return f"Errore iCloud Mail: {e}"

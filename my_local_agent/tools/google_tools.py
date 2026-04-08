@@ -1,5 +1,7 @@
 #tools/google_tools.py:
 import base64
+import time
+from datetime import datetime, timedelta
 import datetime
 from email.message import EmailMessage
 from googleapiclient.discovery import build
@@ -11,19 +13,29 @@ from tools.google_auth import get_google_credentials
 @tool
 def leggi_ultime_email(max_risultati: int = 5) -> str:
     """
-    Legge le ultime email ricevute sull'account Gmail dell'utente.
-    Usa questo tool quando l'utente ti chiede di controllare la posta o leggere le ultime email.
+    Legge le ultime email ricevute sull'account Gmail dell'utente nelle ultime 2 ore.
+    Usa questo tool quando l'utente ti chiede di controllare la posta o leggere le email recenti.
     """
     try:
         creds = get_google_credentials()
         service = build('gmail', 'v1', credentials=creds)
         
-        # Cerca i messaggi nella Inbox
-        results = service.users().messages().list(userId='me', labelIds=['INBOX'], maxResults=max_risultati).execute()
+        # Calcoliamo il timestamp Unix di 2 ore fa per la ricerca nativa di Gmail
+        due_ore_fa = int(time.time() - (2 * 3600))
+        query_ricerca = f"after:{due_ore_fa}"
+        
+        # Cerca i messaggi nella Inbox filtrando rigorosamente con la query
+        results = service.users().messages().list(
+            userId='me', 
+            labelIds=['INBOX'], 
+            maxResults=max_risultati,
+            q=query_ricerca  # Il filtro temporale che evita i timeout
+        ).execute()
+        
         messages = results.get('messages', [])
         
         if not messages:
-            return "Non hai nuovi messaggi nella posta in arrivo."
+            return "Non hai nuovi messaggi nella posta in arrivo nelle ultime 2 ore."
             
         email_list = []
         for msg in messages:

@@ -38,7 +38,7 @@ async def get_llm(task_type: str = "reasoning", temperature: float = 0.0) -> Cha
                 api_key="not-needed",
                 temperature=temperature,
                 max_tokens=max_t,
-                timeout=300.0
+                timeout=400.0
             )
     else:  
         model_name = getattr(config, "FAST_MODEL_NAME", "qwen2.5:3b") if task_type == "fast" else getattr(config, "TEXT_MODEL_NAME", "qwen2.5:14b")

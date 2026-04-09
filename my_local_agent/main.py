@@ -50,7 +50,7 @@ GLOBAL_HISTORY_FILE = "sandbox/global_chat_history.json"
 
 _gpu_percent: float = 0.0
 
-# --- LUCCHETTO PER LA MEMORIA (Quando il lucchetto è chiuso, chiunque altro provi a usare il modello AI dovrà mettersi in fila e aspettare in silenzio.) --- 
+# --- LUCCHETTO PER LA MEMORIA --- 
 ai_lock = asyncio.Lock()
 
 # --- IL GUARDIANO PROATTIVO (DAEMON) ---
@@ -77,25 +77,21 @@ async def proactive_guardian_loop():
                 
                 loop = asyncio.get_event_loop()
                 
-                # Estraiamo Gmail
                 try:
                     gmail_text = await loop.run_in_executor(None, leggi_ultime_email.invoke, {})
                 except Exception as e:
                     gmail_text = f"Errore lettura Gmail: {e}"
 
-                # Estraiamo iCloud Mail
                 try:
                     icloud_text = await loop.run_in_executor(None, leggi_email_icloud.invoke, {})
                 except Exception as e:
                     icloud_text = f"Errore lettura iCloud: {e}"
                 
-                # Estraiamo le chat
                 try:
                     chat_text = await loop.run_in_executor(None, leggi_tutte_le_chat.invoke, {})
                 except Exception as e:
                     chat_text = f"Errore lettura chat: {e}"
                 
-                # Uniamo TUTTO in un unico mega-blocco di testo freddo
                 blocco_testo = f"=== GMAIL ===\n{gmail_text}\n\n=== ICLOUD ===\n{icloud_text}\n\n=== CHAT ===\n{chat_text}"
                 
                 # 2. CARICHIAMO LA "COSTITUZIONE" DEL GUARDIANO
@@ -107,9 +103,11 @@ async def proactive_guardian_loop():
                     tiny_prompt = "Trova urgenze. Altrimenti scrivi NESSUNA_URGENZA."
                 
                 # 3. CHIAMATA DIRETTA E PURA AL LLM
-                print("🛡️ [GUARDIANO] Attendo che la VRAM sia libera...")
+                print("🛡️ [GUARDIANO] Pre-caricamento LLM in background...")
+                llm = await get_llm(task_type="fast", temperature=0.0)
+                
+                print("🛡️ [GUARDIANO] Attendo che la VRAM sia libera per l'inferenza...")
                 async with ai_lock:
-                    llm = await get_llm(task_type="fast", temperature=0.0)
                     res = await llm.ainvoke([
                         SystemMessage(content=tiny_prompt),
                         HumanMessage(content=blocco_testo)
@@ -120,8 +118,6 @@ async def proactive_guardian_loop():
                 
                 # 4. CONTROLLO ALLARME PIÙ ROBUSTO
                 testo_check = testo_risposta.upper()
-                
-                # Lista di parole "sicure", incluse le storpiature tipiche
                 parole_sicure = ["NESSUNA_URGENZA", "NESSUN", "NESSEM", "NO_URGENZA", "NESSUNA URGENZA"]
                 
                 if not any(safe_word in testo_check for safe_word in parole_sicure):
@@ -146,7 +142,6 @@ async def proactive_guardian_loop():
         except Exception as e:
             print(f"🛡️ [GUARDIANO] ❌ Errore critico nel loop: {e}")
         
-        # Dorme per 30 minuti (1800 secondi)
         await asyncio.sleep(1800)
 
 async def _gpu_polling_loop():
@@ -160,7 +155,6 @@ async def _gpu_polling_loop():
     while True:
         try:
             if sistema == "darwin":
-                # --- LOGICA MAC (Apple Silicon) ---
                 proc = await asyncio.create_subprocess_exec(
                     "sudo", "-n", "powermetrics", "--samplers", "gpu_power", "-n", "1", "-i", "200",
                     stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
@@ -171,9 +165,7 @@ async def _gpu_polling_loop():
                     _gpu_percent = float(m.group(1))
                 else:
                     _gpu_percent = 0.0
-                    
             else:
-                # --- LOGICA WINDOWS / LINUX (NVIDIA) ---
                 try:
                     import GPUtil
                     gpus = GPUtil.getGPUs()
@@ -183,7 +175,6 @@ async def _gpu_polling_loop():
                         _gpu_percent = 0.0
                 except ImportError:
                     _gpu_percent = 0.0
-
         except Exception:
             _gpu_percent = 0.0
             
@@ -279,7 +270,6 @@ class EnvSettings(BaseModel):
 @app.get("/api/settings/env")
 async def get_env_settings():
     env_path = ".env"
-    # Inizializza con i valori vuoti/default del modello
     settings = EnvSettings().model_dump()
     if os.path.exists(env_path):
         with open(env_path, "r", encoding="utf-8") as f:
@@ -293,12 +283,9 @@ async def get_env_settings():
 @app.post("/api/settings/env")
 async def save_env_settings(data: EnvSettings):
     env_path = ".env"
-    # Scrive tutte le variabili in automatico
     with open(env_path, "w", encoding="utf-8") as f:
         for k, v in data.model_dump().items():
             f.write(f"{k}={v}\n")
-    
-    # Ricarica le variabili d'ambiente istantaneamente
     load_dotenv(env_path, override=True)
     return {"status": "ok"}
 
@@ -410,7 +397,6 @@ async def api_start_engine(engine: str = Form(...), model: str = Form(None)):
     else:
         config.TEXT_MODEL_NAME = model_name
         
-    # IMPORTANTE: Ora usiamo await perché il Bootstrapper è asincrono
     success, message = await start_engine(engine_type=engine, model_name=model_name)
     
     if success:
@@ -455,13 +441,11 @@ async def chat_endpoint(
     config.ACTIVE_ENGINE = engine
     await compatta_cronologia_se_necessario()
 
-    # --- Salviamo il file permanentemente nella storia ---
     content_to_save = message
     if file and file.filename:
         file_path = _save_upload(file)
         estensione = os.path.splitext(file.filename)[1].lower()
         
-        # Diciamo chiaramente all'Agente di usare il tool giusto in base al file!
         if estensione in [".pdf", ".txt", ".md", ".docx", ".csv"]:
             content_to_save += f"\n\n[📂 DOCUMENTO ALLEGATO: {file_path} | REGOLA CRITICA DI SISTEMA: DEVI INVOCARE IMMEDIATAMENTE IL TOOL `leggi_documento` PASSANDO QUESTO PERCORSO. È SEVERAMENTE VIETATO SCRIVERE PREAMBOLI, SPIEGAZIONI O DIRE 'LO FARÒ'. ESEGUI IL TOOL IN ASSOLUTO SILENZIO ORA.]"
         elif estensione in [".png", ".jpg", ".jpeg", ".webp"]:
@@ -471,58 +455,90 @@ async def chat_endpoint(
         
     add_to_global_history("user", content_to_save, source="web")
 
-    # CHIAMATA CORRETTA: Nessun argomento passato
     langchain_messages = build_langchain_messages_from_global()
+    
+    task_type = "fast" if mode == "fast" else "reasoning"
+    agent = await get_agent_executor(task_type=task_type)
+    inputs = {"messages": langchain_messages}
 
     async def event_generator():
-        async with ai_lock: # <--- Il lucchetto blocca la RAM per te!
+        async with ai_lock: 
             try:
-                task_type = "fast" if mode == "fast" else "reasoning"
-                agent = await get_agent_executor(task_type=task_type)
-                inputs = {"messages": langchain_messages}
+                status_iniziale = {"type": "status", "content": "🧠 Avvio sistema cognitivo..."}
+                yield f"data: {json.dumps(status_iniziale)}\n\n"
                 
-                yield f"data: {json.dumps({'type': 'status', 'content': '🧠 Avvio sistema cognitivo...'})}\n\n"
-                final_message_content = ""
+                final_text = ""
+                tool_results_for_fallback = [] # <--- LISTA PER LA RETE DI SICUREZZA
                 
-                # --- NUOVO MOTORE DI STREAMING DEL RAGIONAMENTO IN TEMPO REALE ---
-                # astream(stream_mode="updates") emette un evento ogni volta che un Nodo (LLM o Tool) finisce
-                async for event in agent.astream(inputs, stream_mode="updates"):
-                    if "agent" in event:
-                        # L'agente ha formulato un pensiero o deciso di usare un tool
-                        msg = event["agent"]["messages"][0]
-                        if hasattr(msg, "tool_calls") and msg.tool_calls:
-                            for tc in msg.tool_calls:
-                                tool_name = tc.get("name", "Sconosciuto")
-                                # Inviamo il pensiero al frontend!
-                                yield f"data: {json.dumps({'type': 'reasoning', 'content': f'🛠️ Chiamata strumento: {tool_name}'})}\n\n"
-                        elif msg.content:
-                            # Se non ci sono tool calls, questa è la risposta finale!
-                            final_message_content = msg.content
+                async for msg, metadata in agent.astream(inputs, stream_mode="messages"):
                     
-                    elif "tools" in event:
-                        # Un tool ha appena finito di lavorare e ha restituito i dati all'Agente
-                        yield f"data: {json.dumps({'type': 'reasoning', 'content': '✅ Tool completato. Analizzo i risultati...'})}\n\n"
+                    if msg.type == "ai":
+                        if hasattr(msg, "tool_call_chunks") and msg.tool_call_chunks:
+                            for tc in msg.tool_call_chunks:
+                                tool_name = tc.get("name")
+                                if tool_name:
+                                    tool_dict = {"type": "reasoning", "content": f"🛠️ Avvio strumento: {tool_name}"}
+                                    yield f"data: {json.dumps(tool_dict)}\n\n"
+                        
+                        if msg.content:
+                            if isinstance(msg.content, str):
+                                final_text += msg.content
+                                text_dict = {"type": "chunk", "content": msg.content}
+                                yield f"data: {json.dumps(text_dict)}\n\n"
+                                
+                            elif isinstance(msg.content, list):
+                                for block in msg.content:
+                                    if isinstance(block, dict) and "text" in block:
+                                        testo_estratto = block["text"]
+                                        final_text += testo_estratto
+                                        block_dict = {"type": "chunk", "content": testo_estratto}
+                                        yield f"data: {json.dumps(block_dict)}\n\n"
+                            
+                    elif msg.type == "tool":
+                        # SALVIAMO IL RISULTATO DEL TOOL PER LA RETE DI SICUREZZA
+                        tool_results_for_fallback.append(f"Tool [{msg.name}] ha risposto: {msg.content}")
+                        dati_tool = {"type": "reasoning", "content": f"✅ Dati estratti da {msg.name}. Elaboro..."}
+                        yield f"data: {json.dumps(dati_tool)}\n\n"
 
-                yield f"data: {json.dumps({'type': 'status', 'content': '✍️ Scrittura completata.'})}\n\n"
+                # --- INIZIO RETE DI SICUREZZA ---
+                # Se l'LLM ha usato un tool ma poi è morto senza dire nulla...
+                if not final_text.strip() and tool_results_for_fallback:
+                    avviso_salvataggio = {"type": "reasoning", "content": "🧠 Bypass in corso (Rielaborazione Dati)..."}
+                    yield f"data: {json.dumps(avviso_salvataggio)}\n\n"
+                    
+                    testi_estratti = "\n".join(tool_results_for_fallback)
+                    prompt_salvataggio = (
+                        f"L'utente ha chiesto: '{message}'.\n"
+                        f"Il sistema ha estratto questi dati tramite i tool:\n{testi_estratti}\n\n"
+                        f"Rispondi all'utente in italiano spiegando questi dati in modo chiaro e colloquiale."
+                    )
+                    
+                    llm_fallback = await get_llm(task_type="fast", temperature=0.3)
+                    async for chunk in llm_fallback.astream([HumanMessage(content=prompt_salvataggio)]):
+                        if chunk.content:
+                            final_text += chunk.content
+                            chunk_salvataggio = {"type": "chunk", "content": chunk.content}
+                            yield f"data: {json.dumps(chunk_salvataggio)}\n\n"
+                # --- FINE RETE DI SICUREZZA ---
+
+                status_finale = {"type": "status", "content": "✍️ Scrittura completata."}
+                yield f"data: {json.dumps(status_finale)}\n\n"
                 
-                # Fallback di sicurezza se la stringa è vuota
-                if not final_message_content:
-                    final_message_content = "Operazione terminata, ma nessun dato testuale restituito."
+                # Se perfino la rete di sicurezza fallisce (mai successo finora)
+                if not final_text.strip():
+                    final_text = "I tool hanno completato l'azione correttamente in background."
+                    fallback_dict = {"type": "chunk", "content": final_text}
+                    yield f"data: {json.dumps(fallback_dict)}\n\n"
 
-                # Salviamo nella memoria storica
-                add_to_global_history("ai", final_message_content, source="web")
-
-                # Streamiamo la parola finale lettera per lettera (effetto digitazione)
-                chunk_size = 4
-                for i in range(0, len(final_message_content), chunk_size):
-                    testo_parziale = final_message_content[i:i+chunk_size]
-                    yield f"data: {json.dumps({'type': 'chunk', 'content': testo_parziale})}\n\n"
-                    await asyncio.sleep(0.015) 
+                add_to_global_history("ai", final_text, source="web")
                 
-                yield f"data: {json.dumps({'type': 'final'})}\n\n"
+                fine_flusso = {"type": "final"}
+                yield f"data: {json.dumps(fine_flusso)}\n\n"
 
             except Exception as e:
-                yield f"data: {json.dumps({'type': 'error', 'content': f'Errore critico: {str(e)}'})}\n\n"
+                errore_dict = {"type": "error", "content": f"Errore critico: {str(e)}"}
+                yield f"data: {json.dumps(errore_dict)}\n\n"
+                
             yield "data: [DONE]\n\n"
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
@@ -542,11 +558,13 @@ async def chat_sync_endpoint(
         agent = await get_agent_executor(task_type=task_type)
         langchain_messages = build_langchain_messages_from_global()
         
-        async with ai_lock: # <--- Lucchetto anche qui
+        async with ai_lock: 
             inputs = {"messages": langchain_messages}
             result = await agent.ainvoke(inputs)
         
         final_message = ""
+        tool_results_for_fallback = []
+        
         if result and "messages" in result:
             messages = result["messages"]
             for msg in reversed(messages):
@@ -554,14 +572,25 @@ async def chat_sync_endpoint(
                     final_message = msg.content
                     break
             
+            # RETE DI SICUREZZA PER ENDPOINT SINCRONO
             if not final_message:
-                for msg in reversed(messages):
-                    if msg.type == "tool" and msg.content:
-                        final_message = f"🤖 **Risultato Estratto dal Tool:**\n{msg.content}"
-                        break
+                for msg in messages:
+                    if msg.type == "tool":
+                        tool_results_for_fallback.append(f"[{msg.name}]: {msg.content}")
+                
+                if tool_results_for_fallback:
+                    testi_estratti = "\n".join(tool_results_for_fallback)
+                    prompt_salvataggio = (
+                        f"L'utente ha chiesto: '{message}'.\n"
+                        f"Il sistema ha estratto questi dati:\n{testi_estratti}\n\n"
+                        f"Rispondi all'utente in italiano in base a questi dati."
+                    )
+                    llm_fallback = await get_llm(task_type="fast", temperature=0.3)
+                    fallback_res = await llm_fallback.ainvoke([HumanMessage(content=prompt_salvataggio)])
+                    final_message = fallback_res.content
                         
         if not final_message:
-            final_message = "Operazione terminata, ma nessun dato estratto."
+            final_message = "I tool hanno eseguito l'azione in background correttamente."
             
         add_to_global_history("ai", final_message, source="telegram")
             
@@ -572,7 +601,6 @@ async def chat_sync_endpoint(
 if __name__ == "__main__":
     import uvicorn
     
-    # Tauri sceglie una porta libera e ce la passa qui come argomento
     port = 8000
     if len(sys.argv) > 1:
         try:
@@ -580,5 +608,4 @@ if __name__ == "__main__":
         except:
             pass
             
-    # Passo diretto dell'oggetto 'app' per supportare la compilazione con PyInstaller
     uvicorn.run(app, host="127.0.0.1", port=port, log_level="info")

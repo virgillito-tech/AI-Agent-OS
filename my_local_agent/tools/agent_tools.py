@@ -25,6 +25,8 @@ from tools.google_tools import leggi_ultime_email, invia_email_google, leggi_pro
 from langchain_openai import ChatOpenAI
 from pydantic import Field
 
+from core.scheduler import scheduler
+
 # --- FIX PYDANTIC V2 ---
 class SafeBrowserLLM(ChatOpenAI):
     provider: str = Field(default="openai")
@@ -701,6 +703,43 @@ def leggi_task_programmati() -> str:
         return "Ecco i task attualmente programmati e attivi nel sistema:\n" + "\n".join(lista_task)
     except Exception as e:
         return f"Errore durante la lettura dei task: {e}"
+    
+
+@tool
+def elimina_task_programmato(parola_chiave: str) -> str:
+    """
+    Usa questo tool per eliminare un task programmato o un promemoria.
+    Passa una parola chiave univoca contenuta nel task per trovarlo ed eliminarlo.
+    """
+    print(f"🗑️ [TOOL: Scheduler] Richiesta eliminazione task con keyword: '{parola_chiave}'")
+    
+    try:
+        jobs = scheduler.get_jobs()
+        if not jobs:
+            return "Non ci sono task programmati al momento nel database."
+
+        task_eliminati = 0
+        dettagli_eliminati = []
+
+        for job in jobs:
+            # APScheduler salva il prompt del task negli argomenti (job.args[0])
+            testo_task = ""
+            if job.args and len(job.args) > 0:
+                testo_task = str(job.args[0])
+
+            # Se la parola chiave è nel testo del task, lo eliminiamo
+            if parola_chiave.lower() in testo_task.lower():
+                scheduler.remove_job(job.id)
+                task_eliminati += 1
+                dettagli_eliminati.append(testo_task)
+
+        if task_eliminati > 0:
+            return f"Eliminati {task_eliminati} task con successo:\n" + "\n".join([f"- {t}" for t in dettagli_eliminati])
+
+        return f"Nessun task trovato corrispondente alla parola chiave: '{parola_chiave}'."
+        
+    except Exception as e:
+        return f"Errore durante l'eliminazione del task: {e}"
     
 
 tools = [

@@ -6,18 +6,15 @@ import os
 ACTIVE_ENGINE = "mlx"
 
 # --- MODELLI MLX (Ottimizzati TurboQuant) ---
-# Unifichiamo i modelli per evitare che il server crashi cercando di switchare modello sulla stessa porta
-MLX_MODEL_14B = "mlx-community/Qwen2.5-14B-Instruct-4bit"
-
-MLX_FAST_MODEL_NAME = os.getenv("MLX_FAST_MODEL_NAME", MLX_MODEL_14B)
-MLX_TEXT_MODEL_NAME = os.getenv("MLX_TEXT_MODEL_NAME", MLX_MODEL_14B)
-MLX_VISION_MODEL_NAME = os.getenv("MLX_VISION_MODEL_NAME", MLX_MODEL_14B)
+MLX_FAST_MODEL_NAME = os.getenv("MLX_FAST_MODEL_NAME", "Qwen3.5-4B-MLX-8bit")
+MLX_TEXT_MODEL_NAME = os.getenv("MLX_TEXT_MODEL_NAME", "Qwen3.5-9B-MLX-4bit")
+MLX_VISION_MODEL_NAME = os.getenv("MLX_VISION_MODEL_NAME", "Qwen3.5-9B-MLX-4bit")
 
 MLX_BASE_URL = os.getenv("MLX_BASE_URL", "http://localhost:8080")
 
 # --- MODELLI OLLAMA (Fallback) ---
-TEXT_MODEL_NAME = os.getenv("TEXT_MODEL_NAME", "qwen2.5:14b")
-FAST_MODEL_NAME = os.getenv("FAST_MODEL_NAME", "qwen2.5:14b")
+TEXT_MODEL_NAME = os.getenv("TEXT_MODEL_NAME", "qwen3.5:4b")
+FAST_MODEL_NAME = os.getenv("FAST_MODEL_NAME", "qwen3.5:9b")
 BASE_URL_TEXT = os.getenv("BASE_URL_TEXT", "http://localhost:11434")
 
 VISION_MODEL_NAME = os.getenv("VISION_MODEL_NAME", "llama3.2-vision")

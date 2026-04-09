@@ -1,6 +1,6 @@
 # core/memory_rag.py
 import os
-from langchain_ollama import OllamaEmbeddings
+import config
 from langchain_qdrant import QdrantVectorStore
 from qdrant_client import QdrantClient
 from qdrant_client.http.models import Distance, VectorParams
@@ -12,29 +12,36 @@ DB_PATH = os.path.join("qdrant_db")
 os.makedirs(DB_PATH, exist_ok=True)
 COLLECTION_NAME = "personal_memory"
 
-# Il modello nomic-embed-text genera vettori di 768 dimensioni
+# Sia nomic-embed-text che il modello HuggingFace che useremo hanno 768 dimensioni
 VECTOR_SIZE = 768
 
 def get_vector_store():
     """
-    Inizializza il client e l'embedding nel thread corrente.
-    Questo bypassa completamente l'errore di Thread-Safety di SQLite!
+    Inizializza il client e l'embedding in base al motore attivo.
     """
-    # Inizializza il client Qdrant in modalità locale (salvataggio su file)
     client = QdrantClient(path=DB_PATH)
+    motore_attivo = getattr(config, "ACTIVE_ENGINE", "ollama")
+    
+    if motore_attivo == "ollama":
+        from langchain_ollama import OllamaEmbeddings
+        embeddings = OllamaEmbeddings(model="nomic-embed-text")
+    else:
+        # Quando siamo su MLX, usiamo un modello Python locale accelerato su Apple Silicon
+        from langchain_huggingface import HuggingFaceEmbeddings
+        # Questo modello è eccellente per l'italiano e spara vettori a 768 dimensioni
+        embeddings = HuggingFaceEmbeddings(
+            model_name="sentence-transformers/paraphrase-multilingual-mpnet-base-v2",
+            model_kwargs={'device': 'mps'} # Usa la GPU unificata del Mac
+        )
     
     # Crea la collezione se non esiste
     if not client.collection_exists(COLLECTION_NAME):
-        print("🧠 [MEMORY] Creazione nuova collezione di memoria...")
+        print(f"🧠 [MEMORY] Creazione collezione ({motore_attivo} mode)...")
         client.create_collection(
             collection_name=COLLECTION_NAME,
             vectors_config=VectorParams(size=VECTOR_SIZE, distance=Distance.COSINE),
         )
         
-    # Inizializziamo il modello che traduce le parole in vettori
-    embeddings = OllamaEmbeddings(model="nomic-embed-text")
-    
-    # Creiamo l'oggetto VectorStore di LangChain
     return QdrantVectorStore(
         client=client,
         collection_name=COLLECTION_NAME,

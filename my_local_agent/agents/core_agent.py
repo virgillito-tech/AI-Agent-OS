@@ -19,7 +19,7 @@ from tools.agent_tools import (
     leggi_file_sistema, scrivi_o_copia_file, leggi_whatsapp, leggi_telegram_personale, 
     scatta_e_analizza_schermo, esegui_azione_mouse_tastiera, navigatore_web_integrato, 
     leggi_tutte_le_chat, leggi_pagina_web, crea_documento_pdf, 
-    leggi_documento, leggi_task_programmati
+    leggi_documento, leggi_task_programmati, elimina_task_programmato
 )
 
 # ---------------------------------------------------------
@@ -30,17 +30,29 @@ DESKTOP_TOOLS = [esplora_file_sistema, leggi_file_sistema, scrivi_o_copia_file, 
 COMMS_TOOLS = [leggi_ultime_email, invia_email_google, invia_email_universale, leggi_whatsapp, leggi_telegram_personale, leggi_prossimi_eventi_calendario, leggi_tutte_le_chat, leggi_email_icloud, leggi_calendario_icloud]
 
 # ---------------------------------------------------------
-# 2. CREAZIONE DEI SUB-AGENTI (Async Agent-as-a-Tool)
+# 2. CACHE DEI SUB-AGENTI (SINGLETON PATTERN)
+# ---------------------------------------------------------
+# Dizionario globale che manterrà vivi i sub-agenti una volta creati
+_agents_cache = {}
+
+async def _get_cached_agent(agent_name: str, tools: list, task_type: str = "fast"):
+    """Recupera l'agente dalla cache o lo costruisce (Lazy Initialization) se non esiste."""
+    if agent_name not in _agents_cache:
+        print(f"🔧 Inizializzazione lazy del Sub-Agente: {agent_name}...")
+        llm = await get_llm(task_type=task_type)
+        _agents_cache[agent_name] = create_react_agent(llm, tools)
+    return _agents_cache[agent_name]
+
+# ---------------------------------------------------------
+# 3. CREAZIONE DEI SUB-AGENTI (Async Agent-as-a-Tool)
 # ---------------------------------------------------------
 
 @tool
 async def delegato_ricerca_web(istruzioni: str) -> str:
     """DELEGA: Incarica il Sub-Agente Web di fare ricerche su internet."""
     print(f"\n   🤖 [SUB-AGENTE WEB] Inizio lavoro per: {istruzioni}")
-    # Nota: get_llm DEVE essere atteso con await
-    llm = await get_llm(task_type="fast")
-    agent = create_react_agent(llm, WEB_TOOLS)
-    # Eseguiamo in modo asincrono per non bloccare TurboQuant
+    # Recupera l'agente dalla cache invece di crearlo da zero
+    agent = await _get_cached_agent("web", WEB_TOOLS, "fast")
     res = await agent.ainvoke({"messages": [("user", istruzioni)]})
     return f"Risultato dall'Agente Web:\n{res['messages'][-1].content}"
 
@@ -48,8 +60,7 @@ async def delegato_ricerca_web(istruzioni: str) -> str:
 async def delegato_sistema_file(istruzioni: str) -> str:
     """DELEGA: Incarica il Sub-Agente Desktop di esplorare cartelle, leggere file o eseguire codice."""
     print(f"\n   🤖 [SUB-AGENTE DESKTOP] Inizio lavoro per: {istruzioni}")
-    llm = await get_llm(task_type="fast")
-    agent = create_react_agent(llm, DESKTOP_TOOLS)
+    agent = await _get_cached_agent("desktop", DESKTOP_TOOLS, "fast")
     res = await agent.ainvoke({"messages": [("user", istruzioni)]})
     return f"Risultato dall'Agente Desktop:\n{res['messages'][-1].content}"
 
@@ -57,8 +68,7 @@ async def delegato_sistema_file(istruzioni: str) -> str:
 async def delegato_comunicazioni(istruzioni: str) -> str:
     """DELEGA: Incarica il Sub-Agente Comunicazioni di gestire email, WhatsApp, Telegram."""
     print(f"\n   🤖 [SUB-AGENTE COMMS] Inizio lavoro per: {istruzioni}")
-    llm = await get_llm(task_type="fast")
-    agent = create_react_agent(llm, COMMS_TOOLS)
+    agent = await _get_cached_agent("comms", COMMS_TOOLS, "fast")
     res = await agent.ainvoke({"messages": [("user", istruzioni)]})
     return f"Risultato dall'Agente Comunicazioni:\n{res['messages'][-1].content}"
 
@@ -66,14 +76,13 @@ async def delegato_comunicazioni(istruzioni: str) -> str:
 async def delegato_automazione_ui(istruzioni: str) -> str:
     """DELEGA: Incarica il Sub-Agente UI di guardare lo schermo e muovere mouse/tastiera."""
     print(f"\n   🤖 [SUB-AGENTE UI] Inizio lavoro per: {istruzioni}")
-    llm = await get_llm(task_type="reasoning") 
     ui_tools = [scatta_e_analizza_schermo, esegui_azione_mouse_tastiera]
-    agent = create_react_agent(llm, ui_tools)
+    agent = await _get_cached_agent("ui", ui_tools, "reasoning")
     res = await agent.ainvoke({"messages": [("user", istruzioni)]})
     return f"Risultato dall'Agente UI:\n{res['messages'][-1].content}"
 
 # ---------------------------------------------------------
-# 3. IL SUPERVISORE (Core Agent)
+# 4. IL SUPERVISORE (Core Agent)
 # ---------------------------------------------------------
 
 def get_dynamic_system_prompt() -> str:
@@ -115,7 +124,8 @@ async def get_agent_executor(task_type: str = "reasoning"):
         delegato_automazione_ui,
         navigatore_web_integrato,
         leggi_pagina_web,
-        leggi_task_programmati
+        leggi_task_programmati,
+        elimina_task_programmato
     ]
     
     # Restituiamo l'agente pronto per lo streaming asincrono in main.py

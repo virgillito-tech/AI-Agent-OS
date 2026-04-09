@@ -50,3 +50,6 @@ google-auth-oauthlib
 imap-tools
 caldav
 vobject
+
+pyautogui
+mss

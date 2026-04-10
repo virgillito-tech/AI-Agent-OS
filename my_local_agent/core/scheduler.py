@@ -81,7 +81,7 @@ async def _esegui_agente_in_background(prompt_istruzione: str, chat_id: str):
                         f"I tool hanno prodotto questi dati:\n{testi_estratti}\n\n"
                         f"Scrivi un breve resoconto finale chiaro per l'utente in base a questi dati."
                     )
-                    llm_fallback = await get_llm(task_type="fast", temperature=0.3)
+                    llm_fallback = await get_llm(task_type="fast", temperature=0.0)
                     fallback_res = await llm_fallback.ainvoke([HumanMessage(content=prompt_salvataggio)])
                     risultato_finale = fallback_res.content
         

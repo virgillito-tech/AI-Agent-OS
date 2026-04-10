@@ -9,6 +9,11 @@ from core.llm_factory import get_llm
 from langchain_core.messages import HumanMessage
 from tools.icloud_tools import leggi_email_icloud, leggi_calendario_icloud
 from tools.os_tools import leggi_stato_batteria, sospendi_computer, apri_applicazione, riproduci_audio_testo
+from tools.converter_tools import converti_documento
+from tools.drive_tools import esplora_google_drive, scarica_da_drive, carica_su_drive
+from tools.browser_tools import automazione_login_sito, naviga_e_clicca
+from tools.database_tools import gestisci_database_sqlite
+from tools.social_tools import pubblica_post_twitter
 
 # Import dei tool specialistici
 from tools.agent_tools import (
@@ -26,8 +31,8 @@ from tools.agent_tools import (
 # 1. DEFINIZIONE DEI TOOLKIT DEGLI SPECIALISTI
 # ---------------------------------------------------------
 WEB_TOOLS = [ricerca_web_affidabile, apri_sito_web_universale, leggi_pagina_web]
-DESKTOP_TOOLS = [esplora_file_sistema, leggi_file_sistema, scrivi_o_copia_file, execute_python_code, apri_in_vscode, crea_documento_pdf, leggi_stato_batteria, sospendi_computer, apri_applicazione, riproduci_audio_testo, leggi_documento]
-COMMS_TOOLS = [leggi_ultime_email, invia_email_google, invia_email_universale, leggi_whatsapp, leggi_telegram_personale, leggi_prossimi_eventi_calendario, leggi_tutte_le_chat, leggi_email_icloud, leggi_calendario_icloud]
+DESKTOP_TOOLS = [esplora_file_sistema, leggi_file_sistema, scrivi_o_copia_file, execute_python_code, apri_in_vscode, crea_documento_pdf, leggi_stato_batteria, sospendi_computer, apri_applicazione, riproduci_audio_testo, leggi_documento, converti_documento, gestisci_database_sqlite]
+COMMS_TOOLS = [leggi_ultime_email, invia_email_google, invia_email_universale, leggi_whatsapp, leggi_telegram_personale, leggi_prossimi_eventi_calendario, leggi_tutte_le_chat, leggi_email_icloud, leggi_calendario_icloud, esplora_google_drive, scarica_da_drive, carica_su_drive, pubblica_post_twitter]
 
 # ---------------------------------------------------------
 # 2. CACHE DEI SUB-AGENTI (SINGLETON PATTERN)
@@ -125,7 +130,15 @@ async def get_agent_executor(task_type: str = "reasoning"):
         navigatore_web_integrato,
         leggi_pagina_web,
         leggi_task_programmati,
-        elimina_task_programmato
+        elimina_task_programmato,
+        converti_documento,
+        esplora_google_drive, 
+        scarica_da_drive, 
+        carica_su_drive,
+        automazione_login_sito,
+        naviga_e_clicca,
+        gestisci_database_sqlite,
+        pubblica_post_twitter
     ]
     
     # Restituiamo l'agente pronto per lo streaming asincrono in main.py

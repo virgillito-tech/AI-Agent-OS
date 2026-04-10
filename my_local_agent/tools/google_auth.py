@@ -8,7 +8,7 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 SCOPES = [
     'https://www.googleapis.com/auth/gmail.modify',       # Per leggere e inviare email
     'https://www.googleapis.com/auth/calendar.events',    # Per leggere e creare eventi
-    'https://www.googleapis.com/auth/drive.readonly'      # Per cercare e leggere file su Drive
+    'https://www.googleapis.com/auth/drive'    # Accesso completo a Drive
 ]
 
 def get_google_credentials(token_filename='token.json'):

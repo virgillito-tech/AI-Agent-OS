@@ -742,6 +742,46 @@ def elimina_task_programmato(parola_chiave: str) -> str:
         return f"Errore durante l'eliminazione del task: {e}"
     
 
+@tool
+def controlla_notifiche_discord() -> str:
+    """
+    Controlla le menzioni recenti e i messaggi non letti su Discord dell'utente.
+    Richiede DISCORD_TOKEN nel file .env.
+    """
+    import requests
+    import os
+    
+    token = os.getenv("DISCORD_TOKEN")
+    if not token:
+        return "Errore: DISCORD_TOKEN non configurato nel file .env."
+        
+    headers = {"Authorization": token, "Content-Type": "application/json"}
+    
+    try:
+        # Endpoint per recuperare le menzioni recenti dell'utente
+        res = requests.get("https://discord.com/api/v9/users/@me/mentions?limit=5", headers=headers, timeout=10)
+        
+        if res.status_code == 200:
+            mentions = res.json()
+            if not mentions:
+                return "Nessuna nuova menzione o notifica urgente su Discord."
+            
+            report = "🔔 NOTIFICHE DISCORD:\n"
+            for m in mentions:
+                autore = m.get('author', {}).get('username', 'Sconosciuto')
+                canale = m.get('channel_id', 'Privato')
+                contenuto = m.get('content', '')[:60]
+                report += f"- Da {autore} (Canale: {canale}): {contenuto}...\n"
+            return report
+        elif res.status_code == 401:
+            return "Errore Discord: Token non valido o scaduto."
+        else:
+            return f"Errore Discord: Status {res.status_code}"
+            
+    except Exception as e:
+        return f"Errore durante la connessione a Discord: {e}"
+    
+
 tools = [
     ottieni_data_ora_sistema,
     ricerca_web_affidabile,
@@ -770,5 +810,6 @@ tools = [
     leggi_pagina_web,
     crea_documento_pdf,
     leggi_documento, 
-    leggi_task_programmati
+    leggi_task_programmati,
+    controlla_notifiche_discord
 ]

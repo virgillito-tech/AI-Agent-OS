@@ -61,7 +61,7 @@ async def proactive_guardian_loop():
             chat_id_path = os.path.join("sandbox", "tg_chat_id.txt")
             
             if not os.path.exists(chat_id_path):
-                print("🛡️ [GUARDIANO] ⚠️ File tg_chat_id.txt non trovato. Mandami un messaggio dal tuo telefono su Telegram per attivarmi!")
+                print("🛡️ [GUARDIANO] ⚠️ File tg_chat_id.txt non trovato.")
             else:
                 with open(chat_id_path, "r") as f:
                     chat_id = f.read().strip()
@@ -99,66 +99,87 @@ async def proactive_guardian_loop():
                     tiny_prompt = "Trova urgenze. Altrimenti scrivi NESSUNA_URGENZA."
                 
                 print("🛡️ [GUARDIANO] Pre-caricamento LLM in background...")
-                llm = await get_llm(task_type="fast", temperature=0.0)
+                # FIX 1: Temperatura a 0.2 per evitare il collasso e gli output vuoti
+                llm = await get_llm(task_type="fast", temperature=0.2)
                 
                 print("🛡️ [GUARDIANO] Attendo che la VRAM sia libera per l'inferenza...")
                 async with ai_lock:
-                    res = await llm.ainvoke([
-                        SystemMessage(content=tiny_prompt),
-                        HumanMessage(content=blocco_testo)
-                    ])
+                    # FIX 2: Appiattiamo tutto in un singolo HumanMessage
+                    prompt_completo = f"{tiny_prompt}\n\nDATI:\n{blocco_testo}"
+                    res = await llm.ainvoke([HumanMessage(content=prompt_completo)])
                 
                 testo_risposta = res.content.strip()
-                print(f"🛡️ [DEBUG GUARDIANO] Analisi cruda del LLM: {testo_risposta}")
+                print(f"🛡️ [DEBUG GUARDIANO] Analisi cruda del LLM: '{testo_risposta}'")
                 
-                testo_check = testo_risposta.upper()
-                parole_sicure = ["NESSUNA_URGENZA", "NESSUN", "NESSEM", "NO_URGENZA", "NESSUNA URGENZA"]
-                
-                if not any(safe_word in testo_check for safe_word in parole_sicure):
-                    print(f"🛡️ [GUARDIANO] 🚨 Urgenza rilevata! Invio notifica push a Telegram...")
-                    token = os.getenv("TELEGRAM_TOKEN")
-                    if token:
-                        url = f"https://api.telegram.org/bot{token}/sendMessage"
-                        testo_notifica = f"🚨 *AI OS | Notifica Proattiva:*\n\n{testo_risposta}"
-                        data = {"chat_id": chat_id, "text": testo_notifica, "parse_mode": "Markdown"}
-                        async with httpx.AsyncClient() as client:
-                            await client.post(url, data=data)
+                # FIX 3: Se il modello ha restituito il vuoto, è un bug, non un'emergenza!
+                if not testo_risposta:
+                    print("🛡️ [GUARDIANO] ⚠️ Il modello ha restituito un testo vuoto. Ignoro per evitare falsi allarmi su Telegram.")
                 else:
-                    print("🛡️ [GUARDIANO] 🟢 Nessuna urgenza rilevata. Torno a dormire.")
+                    testo_check = testo_risposta.upper()
+                    parole_sicure = ["NESSUNA_URGENZA", "NESSUN", "NESSEM", "NO_URGENZA", "NESSUNA URGENZA"]
+                    
+                    if not any(safe_word in testo_check for safe_word in parole_sicure):
+                        print(f"🛡️ [GUARDIANO] 🚨 Urgenza rilevata! Invio notifica push a Telegram...")
+                        token = os.getenv("TELEGRAM_TOKEN")
+                        if token:
+                            url = f"https://api.telegram.org/bot{token}/sendMessage"
+                            testo_notifica = f"🚨 *AI OS | Notifica Proattiva:*\n\n{testo_risposta}"
+                            data = {"chat_id": chat_id, "text": testo_notifica, "parse_mode": "Markdown"}
+                            import httpx
+                            async with httpx.AsyncClient() as client:
+                                await client.post(url, data=data)
+                    else:
+                        print("🛡️ [GUARDIANO] 🟢 Nessuna urgenza rilevata. Torno a dormire.")
                     
         except Exception as e:
             print(f"🛡️ [GUARDIANO] ❌ Errore critico nel loop: {e}")
         
+        # Dorme per 30 minuti prima del prossimo controllo
         await asyncio.sleep(1800)
 
 async def _gpu_polling_loop():
     global _gpu_percent
     import platform
     import asyncio
+    import subprocess
     import re
     
     sistema = platform.system().lower()
     
     while True:
         try:
+            valore_rilevato = 0.0
             if sistema == "darwin":
-                proc = await asyncio.create_subprocess_exec(
-                    "sudo", "-n", "powermetrics", "--samplers", "gpu_power", "-n", "1", "-i", "200",
-                    stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
+                # Usiamo -c IOAccelerator che ha funzionato nel tuo test
+                cmd = ["ioreg", "-c", "IOAccelerator", "-r", "-l"]
+                process = await asyncio.get_event_loop().run_in_executor(
+                    None, 
+                    lambda: subprocess.check_output(cmd, stderr=subprocess.STDOUT).decode()
                 )
-                stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=3.0)
-                m = re.search(r"GPU Active Residency:\s+([\d.]+)%", stdout.decode())
-                if m:
-                    _gpu_percent = float(m.group(1))
-                else:
-                    _gpu_percent = 0.0
-            else:
-                _gpu_percent = 0.0
+                
+                # Cerchiamo Renderer Utilization (più attiva su M3) o Device Utilization
+                match_renderer = re.search(r'"Renderer Utilization %"=(\d+)', process)
+                match_device = re.search(r'"Device Utilization %"=(\d+)', process)
+                
+                if match_renderer and int(match_renderer.group(1)) > 0:
+                    valore_rilevato = float(match_renderer.group(1))
+                elif match_device:
+                    valore_rilevato = float(match_device.group(1))
+            
+            elif sistema == "windows":
+                # Supporto NVIDIA universale
+                try:
+                    res = subprocess.check_output(["nvidia-smi", "--query-gpu=utilization.gpu", "--format=csv,noheader,nounits"]).decode()
+                    valore_rilevato = float(res.strip())
+                except: pass
+
+            _gpu_percent = valore_rilevato
         except Exception:
             _gpu_percent = 0.0
             
-        await asyncio.sleep(5)
+        await asyncio.sleep(2)
 
+        
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     avvia_scheduler()
@@ -195,12 +216,26 @@ async def get_system_stats():
     try:
         cpu = psutil.cpu_percent(interval=0.1)
         ram = psutil.virtual_memory()
+        
+        # Calcoliamo i valori una volta sola
+        total_gb = round(ram.total / (1024 ** 3), 1)
+        used_gb = round(ram.used / (1024 ** 3), 1)
+        percent = ram.percent
+        
         return {
+            # Formato standard (quello che hai ora)
             "cpu_percent": cpu,
-            "ram_percent": ram.percent,
-            "ram_used_gb": round(ram.used / (1024 ** 3), 1),
-            "ram_total_gb": round(ram.total / (1024 ** 3), 1),
-            "gpu_percent": _gpu_percent,
+            "ram_percent": percent,
+            "ram_used_gb": used_gb,
+            "ram_total_gb": total_gb,
+            
+            # Formati alternativi (per compatibilità frontend)
+            "cpuPercent": cpu,
+            "ramPercent": percent,
+            "ramUsed": used_gb,
+            "ramTotal": total_gb,
+            
+            "gpu_percent": _gpu_percent
         }
     except Exception as e:
         return {"error": str(e)}

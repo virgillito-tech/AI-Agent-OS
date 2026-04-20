@@ -38,7 +38,7 @@ async def get_llm(task_type: str = "reasoning", temperature: float = 0.0) -> Cha
                 api_key="not-needed",
                 temperature=temperature,
                 max_tokens=max_t,
-                timeout=400.0,
+                timeout=1200.0,
                 max_retries=1
             )
     else:  

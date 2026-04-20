@@ -100,3 +100,47 @@ def riproduci_audio_testo(testo: str) -> str:
             return f"Sintesi vocale non supportata su {sistema}."
     except Exception as e:
         return f"Errore durante la riproduzione audio: {e}"
+    
+    
+@tool
+def controllo_app_nativa(app_name: str, azione: str) -> str:
+    """
+    Controlla app native (macOS/Windows/Linux). 
+    Esempi: app='Finder', azione='apri cartella documenti' | app='Calendario', azione='mostra eventi'
+    """
+    import platform
+    import subprocess
+    sistema = platform.system()
+    
+    if sistema == "Darwin": # macOS
+        script = ""
+        if "Calendario" in app_name:
+            script = 'tell application "Calendar" to activate'
+        elif "Finder" in app_name:
+            script = 'tell application "Finder" to open home'
+        elif "Mail" in app_name:
+            script = 'tell application "Mail" to activate'
+        
+        if script:
+            subprocess.run(["osascript", "-e", script])
+            return f"Eseguito AppleScript per {app_name}."
+            
+    elif sistema == "Linux":
+        # Su Linux usiamo xdg-open per le azioni standard
+        try:
+            if "Finder" in app_name or "File" in app_name:
+                subprocess.Popen(["xdg-open", os.path.expanduser("~")])
+            elif "Mail" in app_name:
+                subprocess.Popen(["xdg-open", "mailto:"])
+            elif "Browser" in app_name:
+                subprocess.Popen(["xdg-open", "http://google.com"])
+            return f"Aperta app predefinita per {app_name} su Linux."
+        except Exception as e:
+            return f"Errore su Linux: {e}"
+
+    elif sistema == "Windows":
+        if "Finder" in app_name or "Explorer" in app_name:
+            subprocess.run(["explorer", "."])
+        return f"Comando inviato a {app_name} su Windows."
+
+    return f"Sistema {sistema} non supportato per azioni specifiche di {app_name}."

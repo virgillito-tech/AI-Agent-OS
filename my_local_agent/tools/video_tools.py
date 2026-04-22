@@ -1,6 +1,9 @@
 # tools/video_tools.py
 import os
+import torch
 import json
+import platform
+import uuid
 from PIL import Image, ImageDraw, ImageFont
 from moviepy.editor import ImageClip, concatenate_videoclips
 from langchain_core.tools import tool
@@ -115,3 +118,73 @@ def crea_reel_video(testi_json: str) -> str:
         
     except Exception as e:
         return f"❌ Errore critico durante il montaggio video: {e}"
+    
+
+
+def get_video_device():
+    """Rileva l'hardware migliore disponibile."""
+    if torch.cuda.is_available():
+        return "cuda"
+    if platform.system() == "Darwin" and torch.backends.mps.is_available():
+        return "mps"
+    return "cpu"
+
+@tool
+def genera_video_universale(prompt: str, model_id: str = None, num_frames: int = 24) -> str:
+    """
+    Genera una clip video da un prompt testuale. 
+    Supporta diversi modelli e si adatta automaticamente a macOS, Windows e Linux.
+    Modelli suggeriti: 'THUDM/CogVideoX-2b' (Text-to-Video) o 'ali-vilab/text-to-video-ms-1.5m' (Veloce).
+    """
+    from diffusers import CogVideoXPipeline, DiffusionPipeline
+    from diffusers.utils import export_to_video
+    
+    # Prendi il modello dall'argomento o dal .env
+    model_name = model_id or os.getenv("VIDEO_MODEL_NAME", "THUDM/CogVideoX-2b")
+    device = get_video_device()
+    dtype = torch.float16 if device != "cpu" else torch.float32
+
+    print(f"🎬 [VIDEO FACTORY] Avvio generazione su {device} con modello: {model_name}")
+    print(f"📝 Prompt: {prompt}")
+
+    try:
+        # 1. Scelta della Pipeline in base al modello
+        if "CogVideoX" in model_name:
+            pipe = CogVideoXPipeline.from_pretrained(model_name, torch_dtype=dtype)
+        else:
+            # Fallback per modelli generici Text-to-Video
+            pipe = DiffusionPipeline.from_pretrained(model_name, torch_dtype=dtype)
+
+        pipe.to(device)
+
+        # 2. Ottimizzazioni per non far esplodere la VRAM (Fondamentale su 18GB di M3 Pro)
+        if device == "mps" or device == "cuda":
+            pipe.enable_sequential_cpu_offload() # Muove i pezzi del modello tra RAM e GPU
+            
+        # 3. Generazione
+        generator = torch.Generator(device=device).manual_seed(42)
+        
+        # Nota: num_frames=24 a 8fps sono 3 secondi di video
+        video_frames = pipe(
+            prompt=prompt,
+            num_inference_steps=50,
+            num_frames=num_frames,
+            generator=generator,
+        ).frames[0]
+
+        # 4. Salvataggio
+        os.makedirs("sandbox/videos", exist_ok=True)
+        video_name = f"gen_{uuid.uuid4().hex[:6]}.mp4"
+        path = os.path.join("sandbox/videos", video_name)
+        
+        export_to_video(video_frames, path, fps=8)
+        
+        # Libero memoria immediatamente
+        del pipe
+        if device == "cuda": torch.cuda.empty_cache()
+        elif device == "mps": torch.mps.empty_cache()
+
+        return f"✅ Video generato e salvato in: {path}. Puoi inviarlo all'utente con invia_documento_telegram."
+
+    except Exception as e:
+        return f"❌ Errore durante la generazione video: {str(e)}"

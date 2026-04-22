@@ -781,6 +781,43 @@ def controlla_notifiche_discord() -> str:
     except Exception as e:
         return f"Errore durante la connessione a Discord: {e}"
     
+@tool
+def invia_documento_telegram(percorso_file: str, didascalia: str = "") -> str:
+    """
+    Invia un file esistente (PDF, MP4, JPG, ecc.) all'utente su Telegram.
+    Esempio: percorso_file='sandbox/riassunto.pdf'
+    """
+    import os
+    import httpx
+    
+    token = os.getenv("TELEGRAM_TOKEN")
+    # Recuperiamo il chat_id dal file che salva il sistema
+    chat_id_path = os.path.join("sandbox", "tg_chat_id.txt")
+    
+    if not os.path.exists(chat_id_path) or not token:
+        return "❌ Errore: Configurazione Telegram mancante."
+    
+    if not os.path.exists(percorso_file):
+        return f"❌ Errore: Il file {percorso_file} non esiste sul disco."
+
+    with open(chat_id_path, "r") as f:
+        chat_id = f.read().strip()
+
+    url = f"https://api.telegram.org/bot{token}/sendDocument"
+    
+    try:
+        with open(percorso_file, "rb") as f:
+            files = {"document": f}
+            data = {"chat_id": chat_id, "caption": didascalia}
+            res = httpx.post(url, data=data, files=files, timeout=30.0)
+            
+        if res.status_code == 200:
+            return f"✅ File {os.path.basename(percorso_file)} inviato con successo su Telegram!"
+        else:
+            return f"❌ Errore Telegram: {res.text}"
+    except Exception as e:
+        return f"❌ Errore durante l'invio del file: {e}"
+    
 
 tools = [
     ottieni_data_ora_sistema,
@@ -811,5 +848,6 @@ tools = [
     crea_documento_pdf,
     leggi_documento, 
     leggi_task_programmati,
-    controlla_notifiche_discord
+    controlla_notifiche_discord,
+    invia_documento_telegram
 ]

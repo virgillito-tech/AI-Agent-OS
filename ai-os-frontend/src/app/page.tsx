@@ -54,15 +54,17 @@ export default function Home() {
 
   const [allowGlobalWrite, setAllowGlobalWrite] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [settingsTab, setSettingsTab] = useState<"general" | "auth" | "ollama" | "mlx" | "images">("general");
+  const [settingsTab, setSettingsTab] = useState<"general" | "auth" | "ollama" | "mlx" | "images" | "video">("general");
   const [envSettings, setEnvSettings] = useState({
-    TELEGRAM_TOKEN: "", TG_API_ID: "", TG_API_HASH: "", EMAIL_USER: "", EMAIL_PASSWORD: "",
-    ICLOUD_EMAIL: "", ICLOUD_APP_PASSWORD: "", SANDBOX_DIR: "sandbox",
-    IMAGE_GEN_API_URL: "http://localhost:8000/generate", IMAGE_MODEL_NAME: "flux",
-    ACTIVE_ENGINE: "ollama", TEXT_MODEL_NAME: "", FAST_MODEL_NAME: "", BASE_URL_TEXT: "http://localhost:11434", 
-    VISION_MODEL_NAME: "", BASE_URL_VISION: "http://localhost:11434", MAX_TOKENS: "4096",
-    MLX_TEXT_MODEL_NAME: "", MLX_BASE_URL: "http://localhost:8080", MLX_VISION_MODEL_NAME: "", MLX_FAST_MODEL_NAME: ""
-  });
+  TELEGRAM_TOKEN: "", TG_API_ID: "", TG_API_HASH: "", EMAIL_USER: "", EMAIL_PASSWORD: "",
+  ICLOUD_EMAIL: "", ICLOUD_APP_PASSWORD: "", SANDBOX_DIR: "sandbox",
+  IMAGE_GEN_API_URL: "http://localhost:8000/generate", IMAGE_MODEL_NAME: "flux",
+  ACTIVE_ENGINE: "ollama", TEXT_MODEL_NAME: "", FAST_MODEL_NAME: "", BASE_URL_TEXT: "http://localhost:11434", 
+  VISION_MODEL_NAME: "", BASE_URL_VISION: "http://localhost:11434", MAX_TOKENS: "4096",
+  MLX_TEXT_MODEL_NAME: "", MLX_BASE_URL: "http://localhost:8080", MLX_VISION_MODEL_NAME: "", MLX_FAST_MODEL_NAME: "",
+  VIDEO_MODEL_NAME: "THUDM/CogVideoX-2b", // Valore di default
+  VIDEO_DEVICE: "auto"
+});
 
   const [sysStats, setSysStats] = useState<SysStats>({ cpu: 0, ramPercent: 0, ramUsed: 0, ramTotal: 0, gpu: 0 });
   const [isRecording, setIsRecording] = useState(false);
@@ -528,7 +530,8 @@ export default function Home() {
                   { id: "auth", label: "Credenziali" },
                   { id: "ollama", label: "Ollama" },
                   { id: "mlx", label: "Apple MLX" },
-                  { id: "images", label: "Immagini" }
+                  { id: "images", label: "Immagini" },
+                  { id: "video", label: "Video" }
                 ].map(tab => (
                   <button key={tab.id} onClick={() => setSettingsTab(tab.id as any)} className={`text-left px-4 py-1.5 text-sm transition-colors ${settingsTab === tab.id ? "bg-blue-600 text-white" : "text-zinc-400 hover:bg-[#333] hover:text-zinc-200"}`}>
                     {tab.label}
@@ -651,6 +654,41 @@ export default function Home() {
                       <div>
                         <label className="block text-xs text-zinc-500 mb-1">Model Name</label>
                         <input type="text" value={envSettings.IMAGE_MODEL_NAME} onChange={e => setEnvSettings({...envSettings, IMAGE_MODEL_NAME: e.target.value})} className="w-full bg-[#0D0D0D] border border-[#333] rounded px-2 py-1 outline-none focus:border-blue-500" />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* SEZIONE VIDEO */}
+                {settingsTab === "video" && (
+                  <div className="space-y-4">
+                    <h3 className="text-zinc-100 font-medium mb-4">Generazione Video (Factory)</h3>
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block text-xs text-zinc-500 mb-1">Modello Video (HuggingFace ID)</label>
+                        <input 
+                            type="text" 
+                            placeholder="es. THUDM/CogVideoX-2b" 
+                            value={envSettings.VIDEO_MODEL_NAME} 
+                            onChange={e => setEnvSettings({...envSettings, VIDEO_MODEL_NAME: e.target.value})} 
+                            className="w-full bg-[#0D0D0D] border border-[#333] rounded px-2 py-1 text-zinc-200 outline-none focus:border-blue-500 font-mono" 
+                        />
+                        <p className="text-[10px] text-zinc-500 mt-1">
+                            Nota: I modelli video possono pesare oltre 10GB. Assicurati di avere spazio su disco.
+                        </p>
+                      </div>
+                      <div>
+                        <label className="block text-xs text-zinc-500 mb-1">Dispositivo di Calcolo</label>
+                        <select 
+                            value={envSettings.VIDEO_DEVICE} 
+                            onChange={e => setEnvSettings({...envSettings, VIDEO_DEVICE: e.target.value})} 
+                            className="w-full bg-[#0D0D0D] border border-[#333] rounded px-2 py-1 text-zinc-200 outline-none focus:border-blue-500"
+                        >
+                          <option value="auto">Automatico (Rileva GPU)</option>
+                          <option value="mps">Apple Metal (M1/M2/M3)</option>
+                          <option value="cuda">NVIDIA CUDA</option>
+                          <option value="cpu">Solo CPU (Estremamente lento)</option>
+                        </select>
                       </div>
                     </div>
                   </div>

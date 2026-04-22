@@ -1,12 +1,19 @@
 # main.py
+import os
+import sys
+
+# --- PULIZIA AMBIENTE MAC ---
+os.environ["MALLOC_STACK_LOGGING"] = "0"
+if "MALLOC_STACK_LOGGING" in os.environ:
+    del os.environ["MALLOC_STACK_LOGGING"]
+# -------------------------------------------------------------
+
 import multiprocessing
 
 if __name__ == '__main__':
     multiprocessing.freeze_support()
 
-import os
 import re
-import sys
 import shutil
 
 # Le app GUI del Mac non sanno dove siano i programmi. Glielo diciamo noi!
@@ -179,7 +186,7 @@ async def _gpu_polling_loop():
             
         await asyncio.sleep(2)
 
-        
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     avvia_scheduler()

@@ -15,7 +15,7 @@ from tools.browser_tools import automazione_login_sito, naviga_e_clicca
 from tools.database_tools import gestisci_database_sqlite
 from tools.social_tools import pubblica_post_twitter
 from tools.reel_tools import estrai_asset_sito
-from tools.video_tools import crea_reel_video
+from tools.video_tools import crea_reel_video, genera_video_universale
 
 # Import dei tool specialistici
 from tools.agent_tools import (
@@ -26,7 +26,7 @@ from tools.agent_tools import (
     leggi_file_sistema, scrivi_o_copia_file, leggi_whatsapp, leggi_telegram_personale, 
     scatta_e_analizza_schermo, esegui_azione_mouse_tastiera, navigatore_web_integrato, 
     leggi_tutte_le_chat, leggi_pagina_web, crea_documento_pdf, 
-    leggi_documento, leggi_task_programmati, elimina_task_programmato, controlla_notifiche_discord
+    leggi_documento, leggi_task_programmati, elimina_task_programmato, controlla_notifiche_discord, invia_documento_telegram
 )
 
 # ---------------------------------------------------------
@@ -143,7 +143,9 @@ async def get_agent_executor(task_type: str = "reasoning"):
         pubblica_post_twitter,
         estrai_asset_sito,
         crea_reel_video,
-        controlla_notifiche_discord
+        genera_video_universale,
+        controlla_notifiche_discord,
+        invia_documento_telegram
     ]
     
     # Restituiamo l'agente pronto per lo streaming asincrono in main.py

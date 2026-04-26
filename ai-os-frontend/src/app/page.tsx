@@ -62,8 +62,8 @@ export default function Home() {
   ACTIVE_ENGINE: "ollama", TEXT_MODEL_NAME: "", FAST_MODEL_NAME: "", BASE_URL_TEXT: "http://localhost:11434", 
   VISION_MODEL_NAME: "", BASE_URL_VISION: "http://localhost:11434", MAX_TOKENS: "4096",
   MLX_TEXT_MODEL_NAME: "", MLX_BASE_URL: "http://localhost:8080", MLX_VISION_MODEL_NAME: "", MLX_FAST_MODEL_NAME: "",
-  VIDEO_MODEL_NAME: "THUDM/CogVideoX-2b", // Valore di default
-  VIDEO_DEVICE: "auto"
+  VIDEO_MODEL_NAME: "THUDM/CogVideoX-2b", 
+    VIDEO_DEVICE: "auto"
 });
 
   const [sysStats, setSysStats] = useState<SysStats>({ cpu: 0, ramPercent: 0, ramUsed: 0, ramTotal: 0, gpu: 0 });
@@ -659,37 +659,56 @@ export default function Home() {
                   </div>
                 )}
 
-                {/* SEZIONE VIDEO */}
+                {/* SEZIONE VIDEO - REFINED */}
                 {settingsTab === "video" && (
-                  <div className="space-y-4">
-                    <h3 className="text-zinc-100 font-medium mb-4">Generazione Video (Factory)</h3>
-                    <div className="space-y-4">
-                      <div>
-                        <label className="block text-xs text-zinc-500 mb-1">Modello Video (HuggingFace ID)</label>
+                  <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                    <div>
+                      <h3 className="text-zinc-100 font-medium mb-1 flex items-center gap-2">
+                        <span className="text-blue-400 text-lg">🎬</span> 
+                        Video Generation Factory
+                      </h3>
+                      <p className="text-xs text-zinc-500 mb-6">Configura il motore di rendering per le clip video AI.</p>
+                    </div>
+
+                    <div className="space-y-5 bg-zinc-900/30 p-4 rounded-xl border border-zinc-800/50">
+                      <div className="space-y-2">
+                        <label className="block text-[11px] uppercase tracking-wider text-zinc-500 font-semibold">
+                          Modello HuggingFace ID
+                        </label>
                         <input 
                             type="text" 
                             placeholder="es. THUDM/CogVideoX-2b" 
                             value={envSettings.VIDEO_MODEL_NAME} 
                             onChange={e => setEnvSettings({...envSettings, VIDEO_MODEL_NAME: e.target.value})} 
-                            className="w-full bg-[#0D0D0D] border border-[#333] rounded px-2 py-1 text-zinc-200 outline-none focus:border-blue-500 font-mono" 
+                            className="w-full bg-[#0D0D0D] border border-[#333] rounded-lg px-3 py-2 text-zinc-200 outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/20 font-mono text-sm transition-all" 
                         />
-                        <p className="text-[10px] text-zinc-500 mt-1">
-                            Nota: I modelli video possono pesare oltre 10GB. Assicurati di avere spazio su disco.
+                        <p className="text-[10px] text-amber-500/80 mt-2 flex items-center gap-1">
+                           <span>⚠️</span> Richiede circa 14GB di spazio e 18GB+ di RAM unificata.
                         </p>
                       </div>
-                      <div>
-                        <label className="block text-xs text-zinc-500 mb-1">Dispositivo di Calcolo</label>
+
+                      <div className="space-y-2">
+                        <label className="block text-[11px] uppercase tracking-wider text-zinc-500 font-semibold">
+                          Accelerazione Hardware
+                        </label>
                         <select 
                             value={envSettings.VIDEO_DEVICE} 
                             onChange={e => setEnvSettings({...envSettings, VIDEO_DEVICE: e.target.value})} 
-                            className="w-full bg-[#0D0D0D] border border-[#333] rounded px-2 py-1 text-zinc-200 outline-none focus:border-blue-500"
+                            className="w-full bg-[#0D0D0D] border border-[#333] rounded-lg px-3 py-2 text-zinc-200 outline-none focus:border-blue-500/50 transition-all appearance-none cursor-pointer"
                         >
-                          <option value="auto">Automatico (Rileva GPU)</option>
-                          <option value="mps">Apple Metal (M1/M2/M3)</option>
-                          <option value="cuda">NVIDIA CUDA</option>
-                          <option value="cpu">Solo CPU (Estremamente lento)</option>
+                          <option value="auto">Rilevamento Automatico (GPU Default)</option>
+                          <option value="mps">Apple Metal (M1/M2/M3 Pro)</option>
+                          <option value="cuda">NVIDIA CUDA (Windows/Linux)</option>
+                          <option value="cpu">Solo CPU (Lento - Solo test)</option>
                         </select>
                       </div>
+                    </div>
+                    
+                    <div className="p-3 bg-blue-500/5 border border-blue-500/10 rounded-lg">
+                      <p className="text-[11px] text-zinc-400 leading-relaxed">
+                        <strong className="text-blue-400">Pro Tip:</strong> Se riscontri errori di memoria (VRAM) su M3 Pro, 
+                        usa il modello leggero <code className="text-zinc-200 bg-zinc-800 px-1 rounded">damo-vilab/text-to-video-ms-1.5m</code>.
+                      </p>
                     </div>
                   </div>
                 )}

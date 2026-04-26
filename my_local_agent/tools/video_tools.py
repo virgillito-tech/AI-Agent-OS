@@ -122,69 +122,83 @@ def crea_reel_video(testi_json: str) -> str:
 
 
 def get_video_device():
-    """Rileva l'hardware migliore disponibile."""
-    if torch.cuda.is_available():
-        return "cuda"
-    if platform.system() == "Darwin" and torch.backends.mps.is_available():
-        return "mps"
+    if torch.cuda.is_available(): return "cuda"
+    if platform.system() == "Darwin" and torch.backends.mps.is_available(): return "mps"
     return "cpu"
 
 @tool
 def genera_video_universale(prompt: str, model_id: str = None, num_frames: int = 24) -> str:
     """
-    Genera una clip video da un prompt testuale. 
-    Supporta diversi modelli e si adatta automaticamente a macOS, Windows e Linux.
-    Modelli suggeriti: 'THUDM/CogVideoX-2b' (Text-to-Video) o 'ali-vilab/text-to-video-ms-1.5m' (Veloce).
+    Genera una clip video da un prompt. 
+    Supporta: 'THUDM/CogVideoX-2b' (Qualità) o 'damo-vilab/text-to-video-ms-1.5m' (Veloce).
     """
-    from diffusers import CogVideoXPipeline, DiffusionPipeline
+    import torch
+    import os
+    import uuid
+    from diffusers import CogVideoXPipeline, DiffusionPipeline, DPMSolverMultistepScheduler
     from diffusers.utils import export_to_video
-    
-    # Prendi il modello dall'argomento o dal .env
-    model_name = model_id or os.getenv("VIDEO_MODEL_NAME", "THUDM/CogVideoX-2b")
-    device = get_video_device()
-    dtype = torch.float16 if device != "cpu" else torch.float32
 
-    print(f"🎬 [VIDEO FACTORY] Avvio generazione su {device} con modello: {model_name}")
-    print(f"📝 Prompt: {prompt}")
+    # 1. FORZATURA GLOBALE PRECISIONE (Per evitare float64 "clandestini")
+    torch.set_default_dtype(torch.float32)
+    
+    model_name = model_id or os.getenv("VIDEO_MODEL_NAME", "THUDM/CogVideoX-2b")
+    # Fix per modello leggero (usa un ID più recente se il vecchio dà 404)
+    if "damo" in model_name or "ali-vilab" in model_name:
+        model_name = "strangerzonehf/ModelScope-text-to-video-ms-1.5m-baked"
+
+    device = "mps" if torch.backends.mps.is_available() else "cpu"
+    print(f"🎬 [VIDEO FACTORY] Avvio su {device} | Modello: {model_name}")
 
     try:
-        # 1. Scelta della Pipeline in base al modello
         if "CogVideoX" in model_name:
-            pipe = CogVideoXPipeline.from_pretrained(model_name, torch_dtype=dtype)
+            # Carichiamo in float32 per stabilità totale su M3
+            pipe = CogVideoXPipeline.from_pretrained(model_name, torch_dtype=torch.float32)
+            
+            # --- FORCE CAST CRUCIALE ---
+            # Cicliamo su ogni parte del modello per assicurarci che NULLA sia float64
+            pipe.vae.to(dtype=torch.float32)
+            pipe.transformer.to(dtype=torch.float32)
+            pipe.text_encoder.to(dtype=torch.float32)
         else:
-            # Fallback per modelli generici Text-to-Video
-            pipe = DiffusionPipeline.from_pretrained(model_name, torch_dtype=dtype)
+            pipe = DiffusionPipeline.from_pretrained(model_name, torch_dtype=torch.float32)
+            pipe.scheduler = DPMSolverMultistepScheduler.from_config(pipe.scheduler.config)
 
         pipe.to(device)
 
-        # 2. Ottimizzazioni per non far esplodere la VRAM (Fondamentale su 18GB di M3 Pro)
-        if device == "mps" or device == "cuda":
-            pipe.enable_sequential_cpu_offload() # Muove i pezzi del modello tra RAM e GPU
-            
-        # 3. Generazione
-        generator = torch.Generator(device=device).manual_seed(42)
+        # Ottimizzazione memoria per 18GB VRAM
+        if device == "mps":
+            pipe.enable_attention_slicing()
+            # Se hai meno di 36GB di RAM, abilitiamo l'offload
+            pipe.enable_model_cpu_offload()
+
+        # Generazione
+        print(f"🌀 Rendering frame in corso...")
+        # Usiamo un seed fisso per evitare calcoli randomici float64
+        generator = torch.Generator(device="cpu").manual_seed(42)
         
-        # Nota: num_frames=24 a 8fps sono 3 secondi di video
         video_frames = pipe(
             prompt=prompt,
-            num_inference_steps=50,
+            num_inference_steps=25, 
             num_frames=num_frames,
-            generator=generator,
+            generator=generator
         ).frames[0]
 
-        # 4. Salvataggio
+        # 4. SALVATAGGIO
         os.makedirs("sandbox/videos", exist_ok=True)
-        video_name = f"gen_{uuid.uuid4().hex[:6]}.mp4"
-        path = os.path.join("sandbox/videos", video_name)
+        filename = f"video_{uuid.uuid4().hex[:4]}.mp4"
+        path = os.path.abspath(os.path.join("sandbox/videos", filename))
         
         export_to_video(video_frames, path, fps=8)
         
-        # Libero memoria immediatamente
+        # Pulizia VRAM
         del pipe
-        if device == "cuda": torch.cuda.empty_cache()
-        elif device == "mps": torch.mps.empty_cache()
+        torch.mps.empty_cache()
 
-        return f"✅ Video generato e salvato in: {path}. Puoi inviarlo all'utente con invia_documento_telegram."
+        return f"✅ Video generato con successo! Percorso: {path}"
 
     except Exception as e:
-        return f"❌ Errore durante la generazione video: {str(e)}"
+        error_msg = str(e)
+        print(f"❌ [ERRORE VIDEO] {error_msg}")
+        if "float64" in error_msg:
+            return "❌ Errore Hardware Persistente: Il Mac prova ancora a usare float64. Ti consiglio di usare il modello leggero 'strangerzonehf/ModelScope-text-to-video-ms-1.5m-baked'."
+        return f"❌ Errore: {error_msg}"

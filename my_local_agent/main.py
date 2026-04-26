@@ -2,14 +2,23 @@
 import os
 import sys
 
-# --- PULIZIA AMBIENTE MAC ---
-os.environ["MALLOC_STACK_LOGGING"] = "0"
-if "MALLOC_STACK_LOGGING" in os.environ:
-    del os.environ["MALLOC_STACK_LOGGING"]
-# -------------------------------------------------------------
+import ctypes
+
+# --- KILL DEFINITIVO MALLOC LOGGING (LIVELLO C) ---
+def disable_macos_malloc_logging():
+    if sys.platform == "darwin":
+        try:
+            libc = ctypes.CDLL(None)
+            unsetenv = libc.unsetenv
+            unsetenv.argtypes = [ctypes.c_char_p]
+            unsetenv(b"MALLOC_STACK_LOGGING")
+        except Exception:
+            pass
+    os.environ["MALLOC_STACK_LOGGING"] = "0"
+
+disable_macos_malloc_logging()
 
 import multiprocessing
-
 if __name__ == '__main__':
     multiprocessing.freeze_support()
 
@@ -279,6 +288,8 @@ class EnvSettings(BaseModel):
     MLX_BASE_URL: str = "http://localhost:8080"
     MLX_VISION_MODEL_NAME: str = ""
     MLX_FAST_MODEL_NAME: str = ""
+    VIDEO_MODEL_NAME: str = "THUDM/CogVideoX-2b"
+    VIDEO_DEVICE: str = "auto"
 
 @app.get("/api/settings/env")
 async def get_env_settings():

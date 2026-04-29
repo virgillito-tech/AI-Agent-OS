@@ -25,9 +25,12 @@ httpx
 faster-whisper
 Pillow
 
-# --- Memoria a Lungo Termine ---
+# --- Memoria a Lungo Termine e RAG ---
 qdrant-client
 langchain-qdrant
+langchain-huggingface
+sentence-transformers
+langchain-text-splitters
 
 # --- Task in Background e Trigger ---
 apscheduler
@@ -36,6 +39,7 @@ pynput
 # --- Automazione Sistema e Documenti ---
 yagmail
 fpdf2
+pypdf
 
 # --- Automazione Browser AI ---
 playwright
@@ -53,3 +57,9 @@ vobject
 
 pyautogui
 mss
+
+# --- Machine Learning e Motori Locali ---
+mlx-lm
+torch
+diffusers
+transformers

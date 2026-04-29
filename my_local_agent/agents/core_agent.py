@@ -26,14 +26,15 @@ from tools.agent_tools import (
     leggi_file_sistema, scrivi_o_copia_file, leggi_whatsapp, leggi_telegram_personale, 
     scatta_e_analizza_schermo, esegui_azione_mouse_tastiera, navigatore_web_integrato, 
     leggi_tutte_le_chat, leggi_pagina_web, crea_documento_pdf, 
-    leggi_documento, leggi_task_programmati, elimina_task_programmato, controlla_notifiche_discord, invia_documento_telegram
+    leggi_documento, leggi_task_programmati, elimina_task_programmato, controlla_notifiche_discord, invia_documento_telegram,
+    indicizza_cartella_personale, ricerca_nei_documenti_locali
 )
 
 # ---------------------------------------------------------
 # 1. DEFINIZIONE DEI TOOLKIT DEGLI SPECIALISTI
 # ---------------------------------------------------------
 WEB_TOOLS = [ricerca_web_affidabile, apri_sito_web_universale, leggi_pagina_web]
-DESKTOP_TOOLS = [esplora_file_sistema, leggi_file_sistema, scrivi_o_copia_file, execute_python_code, apri_in_vscode, crea_documento_pdf, leggi_stato_batteria, sospendi_computer, apri_applicazione, riproduci_audio_testo, leggi_documento, converti_documento, gestisci_database_sqlite]
+DESKTOP_TOOLS = [esplora_file_sistema, leggi_file_sistema, scrivi_o_copia_file, execute_python_code, apri_in_vscode, crea_documento_pdf, leggi_stato_batteria, sospendi_computer, apri_applicazione, riproduci_audio_testo, leggi_documento, converti_documento, gestisci_database_sqlite, indicizza_cartella_personale, ricerca_nei_documenti_locali]
 COMMS_TOOLS = [leggi_ultime_email, invia_email_google, invia_email_universale, leggi_whatsapp, leggi_telegram_personale, leggi_prossimi_eventi_calendario, leggi_tutte_le_chat, leggi_email_icloud, leggi_calendario_icloud, esplora_google_drive, scarica_da_drive, carica_su_drive, pubblica_post_twitter, controlla_notifiche_discord]
 
 # ---------------------------------------------------------
@@ -145,7 +146,9 @@ async def get_agent_executor(task_type: str = "reasoning"):
         crea_reel_video,
         genera_video_universale,
         controlla_notifiche_discord,
-        invia_documento_telegram
+        invia_documento_telegram,
+        indicizza_cartella_personale,
+        ricerca_nei_documenti_locali
     ]
     
     # Restituiamo l'agente pronto per lo streaming asincrono in main.py

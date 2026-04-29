@@ -14,7 +14,8 @@ def disable_macos_malloc_logging():
             unsetenv(b"MALLOC_STACK_LOGGING")
         except Exception:
             pass
-    os.environ["MALLOC_STACK_LOGGING"] = "0"
+    # Rimuoviamo invece di impostare a "0" per evitare il log di errore in subprocess
+    os.environ.pop("MALLOC_STACK_LOGGING", None)
 
 disable_macos_malloc_logging()
 
@@ -37,6 +38,18 @@ if getattr(sys, 'frozen', False):
         shutil.copytree(src_prompts, dst_prompts)
 
 from dotenv import load_dotenv
+load_dotenv()
+
+# Forza il token di HuggingFace per mlx_lm e transformers
+if "HF_TOKEN" in os.environ and "HUGGING_FACE_HUB_TOKEN" not in os.environ:
+    os.environ["HUGGING_FACE_HUB_TOKEN"] = os.environ["HF_TOKEN"]
+
+# Silenzia i report "UNEXPECTED" di sentence-transformers e i warning di HuggingFace
+import logging
+logging.getLogger("sentence_transformers").setLevel(logging.ERROR)
+logging.getLogger("transformers").setLevel(logging.ERROR)
+logging.getLogger("huggingface_hub").setLevel(logging.ERROR)
+
 # Carica le variabili d'ambiente direttamente dalla cartella di progetto
 load_dotenv(".env")
 
@@ -64,144 +77,27 @@ from core.scheduler import avvia_scheduler
 # --- GESTIONE STORIA GLOBALE ---
 GLOBAL_HISTORY_FILE = "sandbox/global_chat_history.json"
 
-_gpu_percent: float = 0.0
-ai_lock = asyncio.Lock()
+from core.shared import ai_lock
+from core.stats import gpu_polling_loop, get_gpu_percent
+from core.daemon import esegui_controllo_guardiano
+from core.scheduler import scheduler
 
-# --- IL GUARDIANO PROATTIVO (DAEMON) ---
-async def proactive_guardian_loop():
-    print("🛡️ [GUARDIANO] Inizializzato. In attesa del primo ciclo (30s)...")
-    await asyncio.sleep(30)
-    
-    while True:
-        try:
-            chat_id_path = os.path.join("sandbox", "tg_chat_id.txt")
-            
-            if not os.path.exists(chat_id_path):
-                print("🛡️ [GUARDIANO] ⚠️ File tg_chat_id.txt non trovato.")
-            else:
-                with open(chat_id_path, "r") as f:
-                    chat_id = f.read().strip()
-                
-                print("\n🛡️ [GUARDIANO] Risveglio: Estrazione dati in background...")
-                
-                from tools.agent_tools import leggi_tutte_le_chat
-                from tools.google_tools import leggi_ultime_email
-                from tools.icloud_tools import leggi_email_icloud
-                
-                loop = asyncio.get_event_loop()
-                
-                try:
-                    gmail_text = await loop.run_in_executor(None, leggi_ultime_email.invoke, {})
-                except Exception as e:
-                    gmail_text = f"Errore lettura Gmail: {e}"
 
-                try:
-                    icloud_text = await loop.run_in_executor(None, leggi_email_icloud.invoke, {})
-                except Exception as e:
-                    icloud_text = f"Errore lettura iCloud: {e}"
-                
-                try:
-                    chat_text = await loop.run_in_executor(None, leggi_tutte_le_chat.invoke, {})
-                except Exception as e:
-                    chat_text = f"Errore lettura chat: {e}"
-                
-                blocco_testo = f"=== GMAIL ===\n{gmail_text}\n\n=== ICLOUD ===\n{icloud_text}\n\n=== CHAT ===\n{chat_text}"
-                
-                prompt_path = os.path.join("prompts", "tiny_model.md")
-                try:
-                    with open(prompt_path, "r", encoding="utf-8") as f:
-                        tiny_prompt = f.read()
-                except FileNotFoundError:
-                    tiny_prompt = "Trova urgenze. Altrimenti scrivi NESSUNA_URGENZA."
-                
-                print("🛡️ [GUARDIANO] Pre-caricamento LLM in background...")
-                # FIX 1: Temperatura a 0.2 per evitare il collasso e gli output vuoti
-                llm = await get_llm(task_type="fast", temperature=0.2)
-                
-                print("🛡️ [GUARDIANO] Attendo che la VRAM sia libera per l'inferenza...")
-                async with ai_lock:
-                    # FIX 2: Appiattiamo tutto in un singolo HumanMessage
-                    prompt_completo = f"{tiny_prompt}\n\nDATI:\n{blocco_testo}"
-                    res = await llm.ainvoke([HumanMessage(content=prompt_completo)])
-                
-                testo_risposta = res.content.strip()
-                print(f"🛡️ [DEBUG GUARDIANO] Analisi cruda del LLM: '{testo_risposta}'")
-                
-                # FIX 3: Se il modello ha restituito il vuoto, è un bug, non un'emergenza!
-                if not testo_risposta:
-                    print("🛡️ [GUARDIANO] ⚠️ Il modello ha restituito un testo vuoto. Ignoro per evitare falsi allarmi su Telegram.")
-                else:
-                    testo_check = testo_risposta.upper()
-                    parole_sicure = ["NESSUNA_URGENZA", "NESSUN", "NESSEM", "NO_URGENZA", "NESSUNA URGENZA"]
-                    
-                    if not any(safe_word in testo_check for safe_word in parole_sicure):
-                        print(f"🛡️ [GUARDIANO] 🚨 Urgenza rilevata! Invio notifica push a Telegram...")
-                        token = os.getenv("TELEGRAM_TOKEN")
-                        if token:
-                            url = f"https://api.telegram.org/bot{token}/sendMessage"
-                            testo_notifica = f"🚨 *AI OS | Notifica Proattiva:*\n\n{testo_risposta}"
-                            data = {"chat_id": chat_id, "text": testo_notifica, "parse_mode": "Markdown"}
-                            import httpx
-                            async with httpx.AsyncClient() as client:
-                                await client.post(url, data=data)
-                    else:
-                        print("🛡️ [GUARDIANO] 🟢 Nessuna urgenza rilevata. Torno a dormire.")
-                    
-        except Exception as e:
-            print(f"🛡️ [GUARDIANO] ❌ Errore critico nel loop: {e}")
-        
-        # Dorme per 30 minuti prima del prossimo controllo
-        await asyncio.sleep(1800)
-
-async def _gpu_polling_loop():
-    global _gpu_percent
-    import platform
-    import asyncio
-    import subprocess
-    import re
-    
-    sistema = platform.system().lower()
-    
-    while True:
-        try:
-            valore_rilevato = 0.0
-            if sistema == "darwin":
-                # Usiamo -c IOAccelerator che ha funzionato nel tuo test
-                cmd = ["ioreg", "-c", "IOAccelerator", "-r", "-l"]
-                process = await asyncio.get_event_loop().run_in_executor(
-                    None, 
-                    lambda: subprocess.check_output(cmd, stderr=subprocess.STDOUT).decode()
-                )
-                
-                # Cerchiamo Renderer Utilization (più attiva su M3) o Device Utilization
-                match_renderer = re.search(r'"Renderer Utilization %"=(\d+)', process)
-                match_device = re.search(r'"Device Utilization %"=(\d+)', process)
-                
-                if match_renderer and int(match_renderer.group(1)) > 0:
-                    valore_rilevato = float(match_renderer.group(1))
-                elif match_device:
-                    valore_rilevato = float(match_device.group(1))
-            
-            elif sistema == "windows":
-                # Supporto NVIDIA universale
-                try:
-                    res = subprocess.check_output(["nvidia-smi", "--query-gpu=utilization.gpu", "--format=csv,noheader,nounits"]).decode()
-                    valore_rilevato = float(res.strip())
-                except: pass
-
-            _gpu_percent = valore_rilevato
-        except Exception:
-            _gpu_percent = 0.0
-            
-        await asyncio.sleep(2)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     avvia_scheduler()
+    
+    # Scheduliamo il guardiano ogni 30 minuti in un MemoryJobStore provvisorio
+    try:
+        scheduler.add_job(esegui_controllo_guardiano, 'interval', minutes=30, id='daemon_guardiano', replace_existing=True)
+        print("🛡️ [GUARDIANO] Schedulato correttamente ogni 30 minuti via apscheduler.")
+    except Exception as e:
+        print(f"Errore schedulazione guardiano: {e}")
+        
     avvia_listener()
-    asyncio.create_task(_gpu_polling_loop())
-    asyncio.create_task(proactive_guardian_loop()) 
+    asyncio.create_task(gpu_polling_loop())
     yield
 
 app = FastAPI(title="Local AI Agent OS", version="1.0.0", lifespan=lifespan)
@@ -250,11 +146,25 @@ async def get_system_stats():
             "ramPercent": percent,
             "ramUsed": used_gb,
             "ramTotal": total_gb,
-            
-            "gpu_percent": _gpu_percent
+            "gpu_percent": get_gpu_percent()
         }
     except Exception as e:
         return {"error": str(e)}
+
+@app.post("/api/system/clear_cache")
+async def clear_system_cache():
+    """Forza il garbage collector e pulisce la memoria MLX per liberare VRAM."""
+    import gc
+    gc.collect()
+    motore = getattr(config, "ACTIVE_ENGINE", "ollama")
+    if motore == "mlx" and sys.platform == "darwin":
+        try:
+            import mlx.core as mx
+            mx.metal.clear_cache()
+            return {"status": "ok", "message": "Cache MLX e GC puliti con successo."}
+        except ImportError:
+            pass
+    return {"status": "ok", "message": "Garbage Collector eseguito."}
 
 @app.get("/api/settings/permissions")
 async def get_permissions():
@@ -332,22 +242,21 @@ def add_to_global_history(role: str, content: str, source: str = "web"):
 
 async def compatta_cronologia_se_necessario():
     history = get_global_history()
+    # Quando superiamo i 15 messaggi, i più vecchi finiscono nella memoria a lungo termine
     if len(history) > 15:
-        from core.llm_factory import get_llm
-        da_compattare = history[:-4]
-        da_mantenere = history[-4:]
-        testo_da_riassumere = "\n".join([f"{m['role'].upper()}: {m['content']}" for m in da_compattare])
-        try:
-            llm = await get_llm(task_type="fast", temperature=0.0)
-            res = await llm.ainvoke([
-                SystemMessage(content="Riassumi questa conversazione in modo conciso."),
-                HumanMessage(content=testo_da_riassumere)
-            ])
-            nuova_history = [{"id": str(uuid.uuid4()), "role": "system", "content": f"[RIASSUNTO EVENTI PASSATI]:\n{res.content}", "source": "system"}] + da_mantenere
-            with open(GLOBAL_HISTORY_FILE, "w", encoding="utf-8") as f:
-                json.dump(nuova_history, f, indent=2, ensure_ascii=False)
-        except Exception:
-            pass
+        from core.memory_rag import add_chat_history
+        da_archiviare = history[:-8] # Manteniamo gli ultimi 8 intatti
+        da_mantenere = history[-8:]
+        
+        # Salviamo i messaggi espulsi nel RAG vettoriale
+        for msg in da_archiviare:
+            if msg.get("role") != "system" and not msg.get("content").startswith("[RIASSUNTO"):
+                testo = f"{msg['role'].upper()}: {msg['content']}"
+                add_chat_history(testo)
+                
+        # Semplicemente tronchiamo la history attiva, senza pesare sull'LLM per il riassunto
+        with open(GLOBAL_HISTORY_FILE, "w", encoding="utf-8") as f:
+            json.dump(da_mantenere, f, indent=2, ensure_ascii=False)
 
 @app.get("/api/history")
 async def api_get_history():
@@ -361,12 +270,38 @@ async def api_clear_history():
 
 def build_langchain_messages_from_global(): 
     sys_prompt = get_dynamic_system_prompt()
-    langchain_messages = [SystemMessage(content=sys_prompt)]
-    for msg in get_global_history():
+    
+    # RAG INJECTION: Cerchiamo messaggi rilevanti dal passato se ci sono domande dell'utente
+    history = get_global_history()
+    user_msgs = [m["content"] for m in history if m.get("role") == "user"]
+    context_rag = ""
+    if user_msgs:
+        ultima_domanda = user_msgs[-1]
+        try:
+            from core.memory_rag import retrieve_chat_history, retrieve_memory
+            
+            # 1. Recupero frammenti dalle chat passate
+            contesto_recuperato = retrieve_chat_history(ultima_domanda, k=5)
+            if contesto_recuperato:
+                context_rag += f"\n\n[CONTESTO DA CONVERSAZIONI PASSATE]:\nQuesti sono estratti da conversazioni passate rilevanti per la domanda attuale:\n{contesto_recuperato}\n"
+                
+            # 2. Recupero identità e dati personali a lungo termine
+            memoria_personale = retrieve_memory(ultima_domanda, k=3)
+            if "Nessun ricordo pertinente" not in memoria_personale:
+                context_rag += f"\n\n[MEMORIA A LUNGO TERMINE (Identità e Fatti)]:\nQueste sono informazioni stabili che sai sull'utente e sul mondo:\n{memoria_personale}\n"
+                
+            if context_rag:
+                context_rag += "\nUsa questo contesto solo se utile a rispondere in modo naturale e discorsivo."
+                
+        except Exception as e:
+            print(f"Errore RAG injection: {e}")
+            
+    langchain_messages = [SystemMessage(content=sys_prompt + context_rag)]
+    for msg in history:
         if msg.get("role") == "user":
-            langchain_messages.append(HumanMessage(content=msg.get("content", "")))
-        elif msg.get("role") == "ai":
-            langchain_messages.append(AIMessage(content=msg.get("content", "")))
+            langchain_messages.append(HumanMessage(content=msg["content"]))
+        elif msg.get("role") in ["ai", "system"]:
+            langchain_messages.append(AIMessage(content=msg["content"]))
     return langchain_messages
 
 @app.get("/api/models")
@@ -488,44 +423,21 @@ async def chat_endpoint(
                     llm_fallback = await get_llm(task_type="fast", temperature=0.6)
                     empty_chunks = 0 # Contatore della ghigliottina anti-spazio
                     
+                    chat_messages = build_langchain_messages_from_global()
+                    
                     if tool_results_for_fallback:
                         yield f"data: {json.dumps({'type': 'reasoning', 'content': '🧠 Rielaborazione dati in corso...'})}\n\n"
                         testi_estratti = "\n".join(tool_results_for_fallback)
-                        prompt_salvataggio = (
-                            f"Sei l'AI OS dell'utente. Spiega i seguenti dati estratti in modo naturale in italiano.\n\n"
-                            f"DOMANDA UTENTE: '{message}'\n\n"
-                            f"DATI ESTRATTI DAL SISTEMA:\n{testi_estratti}"
-                        )
-                        async for chunk in llm_fallback.astream([HumanMessage(content=prompt_salvataggio)]):
-                            if chunk.content:
-                                # Ghigliottina Anti-Spazio
-                                if not chunk.content.strip():
-                                    empty_chunks += 1
-                                    if empty_chunks > 10: break
-                                else:
-                                    empty_chunks = 0
-                                final_text += chunk.content
-                                yield f"data: {json.dumps({'type': 'chunk', 'content': chunk.content})}\n\n"
+                        chat_messages.append(SystemMessage(content=f"Dati estratti dai tool:\n{testi_estratti}\n\nUsa questi dati per rispondere all'ultima domanda."))
                     else:
                         yield f"data: {json.dumps({'type': 'reasoning', 'content': '🧠 Conversazione in corso...'})}\n\n"
                         
-                        chat_messages = build_langchain_messages_from_global()
-                        sys_prompt_diretto = (
-                            "Sei il fedele AI OS dell'utente. Sai esplorare file, cercare sul web, leggere email e programmare task. "
-                            "Rispondi all'utente in modo cordiale, naturale e discorsivo in italiano, fornendo un aiuto testuale diretto."
-                        )
-                        
-                        if chat_messages and isinstance(chat_messages[0], SystemMessage):
-                            chat_messages[0] = SystemMessage(content=sys_prompt_diretto)
-                        else:
-                            chat_messages.insert(0, SystemMessage(content=sys_prompt_diretto))
-                            
-                        async for chunk in llm_fallback.astream(chat_messages):
+                    async for chunk in llm_fallback.astream(chat_messages):
                             if chunk.content:
                                 # Ghigliottina Anti-Spazio
                                 if not chunk.content.strip():
                                     empty_chunks += 1
-                                    if empty_chunks > 10: break
+                                    if empty_chunks > 50: break
                                 else:
                                     empty_chunks = 0
                                 final_text += chunk.content
@@ -585,30 +497,13 @@ async def chat_sync_endpoint(
                 llm_fallback = await get_llm(task_type="fast", temperature=0.6)
                 empty_chunks = 0
                 
+                chat_messages = build_langchain_messages_from_global()
+                
                 if tool_results_for_fallback:
                     testi_estratti = "\n".join(tool_results_for_fallback)
-                    prompt_salvataggio = (
-                        f"L'utente ha chiesto: '{message}'.\n"
-                        f"Il sistema ha estratto questi dati:\n{testi_estratti}\n\n"
-                        f"Rispondi in italiano in base a questi dati."
-                    )
-                    async for chunk in llm_fallback.astream([HumanMessage(content=prompt_salvataggio)]):
-                        if chunk.content:
-                            if not chunk.content.strip():
-                                empty_chunks += 1
-                                if empty_chunks > 10: break
-                            else:
-                                empty_chunks = 0
-                            final_message += chunk.content
-                else:
-                    sys_prompt_diretto = "Sei un AI OS. Rispondi all'utente in modo colloquiale."
-                    fallback_messages = build_langchain_messages_from_global()
-                    if fallback_messages and isinstance(fallback_messages[0], SystemMessage):
-                        fallback_messages[0] = SystemMessage(content=sys_prompt_diretto)
-                    else:
-                        fallback_messages.insert(0, SystemMessage(content=sys_prompt_diretto))
-                    
-                    async for chunk in llm_fallback.astream(fallback_messages):
+                    chat_messages.append(SystemMessage(content=f"Dati estratti dai tool:\n{testi_estratti}\n\nUsa questi dati per rispondere all'ultima domanda."))
+                
+                async for chunk in llm_fallback.astream(chat_messages):
                         if chunk.content:
                             if not chunk.content.strip():
                                 empty_chunks += 1

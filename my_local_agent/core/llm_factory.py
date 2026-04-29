@@ -9,11 +9,16 @@ from core.model_manager import start_engine
 
 _llm_cache = {}
 
-try:
-    import mlx_turboquant
-    HAS_MLX_TQ = True
-except ImportError:
-    HAS_MLX_TQ = False
+import sys
+import platform
+
+HAS_MLX_TQ = False
+if sys.platform == "darwin" and platform.machine() == "arm64":
+    try:
+        import mlx_turboquant
+        HAS_MLX_TQ = True
+    except ImportError:
+        pass
 
 async def get_llm(task_type: str = "reasoning", temperature: float = 0.0) -> ChatOllama | ChatOpenAI:
     engine = getattr(config, "ACTIVE_ENGINE", "ollama")

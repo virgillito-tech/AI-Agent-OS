@@ -428,7 +428,25 @@ async def leggi_telegram_personale(nome_contatto_o_username: str) -> str:
             return "\n".join(res)
     except Exception as e:
         return f"Errore Telegram: {str(e)}"
-    
+
+@tool
+def indicizza_cartella_personale(percorso_cartella: str) -> str:
+    """
+    Legge tutti i file di testo e PDF in una cartella e li salva nella memoria RAG (Database vettoriale locale).
+    Usa questo tool se l'utente ti chiede di studiare, leggere o memorizzare i suoi appunti o documenti personali.
+    """
+    from core.document_rag import index_directory
+    return index_directory(percorso_cartella)
+
+@tool
+def ricerca_nei_documenti_locali(query: str) -> str:
+    """
+    Cerca le informazioni nei documenti personali precedentemente indicizzati.
+    Usa questo tool per rispondere a domande basandoti sui file locali dell'utente (es. bollette, appunti universitari, riassunti).
+    """
+    from core.document_rag import retrieve_document_context
+    return retrieve_document_context(query)
+
 @tool
 async def scatta_e_analizza_schermo(domanda: str) -> str:
     """Scatta uno screenshot e lo analizza tramite TurboQuant."""

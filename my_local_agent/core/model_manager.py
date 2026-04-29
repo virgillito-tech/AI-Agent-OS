@@ -93,6 +93,9 @@ async def start_engine(engine_type: str, model_name: str, port: int = 8080):
 
     try:
         if engine_type == "mlx":
+            if sys.platform != "darwin" or platform.machine() != "arm64":
+                return False, "Il motore MLX e TurboQuant sono supportati esclusivamente su Mac Apple Silicon (M1/M2/M3)."
+
             # Comando standard raccomandato dai log
             comando = [sys.executable, "-m", "mlx_lm", "server", "--model", model_name, "--port", str(port)]
             

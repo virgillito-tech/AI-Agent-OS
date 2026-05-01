@@ -67,7 +67,10 @@ async def _esegui_agente_in_background(prompt_istruzione: str, chat_id: str):
             f"AZIONE: {prompt_istruzione}"
         )
         
-        res = await agent.ainvoke({"messages": [HumanMessage(content=payload_esecuzione)]})
+        from core.shared import ai_lock
+        
+        async with ai_lock:
+            res = await agent.ainvoke({"messages": [HumanMessage(content=payload_esecuzione)]})
         
         # Estrazione risposta
         if res and "messages" in res:

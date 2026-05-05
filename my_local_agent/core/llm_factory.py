@@ -20,7 +20,10 @@ if sys.platform == "darwin" and platform.machine() == "arm64":
     except ImportError:
         pass
 
+_LAST_MLX_MODEL = None
+
 async def get_llm(task_type: str = "reasoning", temperature: float = 0.0) -> ChatOllama | ChatOpenAI:
+    global _LAST_MLX_MODEL
     engine = getattr(config, "ACTIVE_ENGINE", "ollama")
     max_t = int(getattr(config, "MAX_TOKENS", 4096))
     tq_bits = int(os.getenv("TURBOQUANT_BITS", 3))
@@ -28,17 +31,27 @@ async def get_llm(task_type: str = "reasoning", temperature: float = 0.0) -> Cha
     if engine == "mlx":
         model_name = getattr(config, "MLX_FAST_MODEL_NAME", "mlx-community/Qwen2.5-3B-Instruct-4bit") if task_type == "fast" else getattr(config, "MLX_TEXT_MODEL_NAME", "mlx-community/Qwen2.5-14B-Instruct-4bit")
         
+        server_active = False
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            if s.connect_ex(('127.0.0.1', 8080)) != 0:
-                print(f"⚠️ [LLM FACTORY] Server MLX non rilevato. Avvio automatico...")
-                await start_engine("mlx", model_name)
+            if s.connect_ex(('127.0.0.1', 8080)) == 0:
+                server_active = True
+                
+        if server_active:
+            # Se il server è già attivo, usiamo SEMPRE il nome del modello principale (TEXT)
+            # Questo impedisce a mlx_lm di innescare il lazy-loading di altri modelli (come il 4B)
+            # che svuoterebbe la VRAM e causerebbe timeout o errori 404 durante l'inferenza.
+            target_model = getattr(config, "MLX_TEXT_MODEL_NAME", "mlx-community/Qwen2.5-14B-Instruct-4bit")
+        else:
+            print(f"⚠️ [LLM FACTORY] Server MLX non rilevato. Avvio automatico con {model_name}...")
+            await start_engine("mlx", model_name)
+            target_model = model_name
 
-        key = (engine, model_name, temperature)
+        key = (engine, target_model, temperature)
         if key not in _llm_cache:
             if HAS_MLX_TQ:
                 print(f"🚀 [BETA] TurboQuant ATTIVO: Ottimizzazione {tq_bits}-bit KV.")
             _llm_cache[key] = ChatOpenAI(
-                model=model_name,
+                model=target_model,
                 base_url=f"{getattr(config, 'MLX_BASE_URL', 'http://localhost:8080')}/v1",
                 api_key="not-needed",
                 temperature=temperature,

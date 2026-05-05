@@ -501,14 +501,34 @@ def esegui_azione_mouse_tastiera(azione: str, x: int = None, y: int = None, test
         return f"Errore critico automazione GUI: {e}"
 
 @tool
-async def programma_task_autonomo(istruzione: str, minuti_attesa: int = 0, ora_ricorrente: str = "") -> str:
+async def programma_task_autonomo(
+    istruzione: str, 
+    minuti_attesa: int = 0, 
+    cron_minute: str = "", 
+    cron_hour: str = "", 
+    cron_day: str = "", 
+    cron_month: str = "", 
+    cron_day_of_week: str = "",
+    cron_year: str = ""
+) -> str:
     """
     Programma un task in cui TU STESSO (Agente) dovrai fare ricerche, analizzare dati o eseguire azioni nel futuro.
-    - Per task singolo: usa 'minuti_attesa' (es. 60 per tra un'ora).
-    - Per task GIORNALIERO RICORRENTE: usa 'ora_ricorrente' (es. "09:00").
-    L'istruzione deve descrivere ESATTAMENTE cosa dovrai fare (es. "Cerca le notizie AI e fai un riassunto").
+    - Per task singolo a breve termine: usa SOLO 'minuti_attesa' (es. 60 per tra un'ora).
+    - Per TUTTI GLI ALTRI task ricorrenti (giornalieri, settimanali, mensili, annuali) o date esatte: compila i campi "cron_*" necessari.
+      - cron_minute: "0-59"
+      - cron_hour: "0-23"
+      - cron_day: "1-31", oppure espressioni come "last" (ultimo giorno), "last sun" (ultima domenica)
+      - cron_month: "1-12"
+      - cron_day_of_week: "mon", "tue", "wed", "thu", "fri", "sat", "sun", oppure range come "mon-fri"
+      - cron_year: anno a 4 cifre (es. "2026")
+      Esempi: 
+      - "Ogni giorno alle 09:00" -> cron_hour="9", cron_minute="0"
+      - "Una volta a settimana il lunedì alle 7" -> cron_day_of_week="mon", cron_hour="7", cron_minute="0"
+      - "Ogni ultima domenica del mese" -> cron_day="last sun", cron_hour="10", cron_minute="0"
+      Lascia i campi vuoti ("") per ignorarli.
+    L'istruzione deve descrivere ESATTAMENTE cosa dovrai fare.
     """
-    print(f"📅 [TOOL: Scheduler] Richiesta autonomia: minuti={minuti_attesa}, ricorrente={ora_ricorrente}")
+    print(f"📅 [TOOL: Scheduler] Richiesta autonomia: minuti={minuti_attesa}, cron={cron_hour}:{cron_minute} day={cron_day} dow={cron_day_of_week}")
     try:
         from core.scheduler import scheduler, _esegui_agente_in_background
         
@@ -519,12 +539,21 @@ async def programma_task_autonomo(istruzione: str, minuti_attesa: int = 0, ora_r
         with open(chat_id_path, "r") as f:
             chat_id = f.read().strip()
 
-        if ora_ricorrente:
-            ore, minuti_orario = map(int, ora_ricorrente.split(":"))
-            scheduler.add_job(
-                _esegui_agente_in_background, 'cron', hour=ore, minute=minuti_orario, args=[istruzione, chat_id]
-            )
-            return f"✅ Task giornaliero impostato. Ogni giorno alle {ora_ricorrente} mi sveglierò ed eseguirò: '{istruzione}'."
+        if any([cron_minute, cron_hour, cron_day, cron_month, cron_day_of_week, cron_year]):
+            cron_kwargs = {}
+            if cron_minute: cron_kwargs['minute'] = cron_minute
+            if cron_hour: cron_kwargs['hour'] = cron_hour
+            if cron_day: cron_kwargs['day'] = cron_day
+            if cron_month: cron_kwargs['month'] = cron_month
+            if cron_day_of_week: cron_kwargs['day_of_week'] = cron_day_of_week
+            if cron_year: cron_kwargs['year'] = cron_year
+            
+            try:
+                scheduler.add_job(_esegui_agente_in_background, 'cron', args=[istruzione, chat_id], **cron_kwargs)
+            except Exception as cron_err:
+                return f"Errore di sintassi Cron: {cron_err}. Verifica i parametri e riprova."
+                
+            return f"✅ Task cron impostato con parametri: {cron_kwargs}. Istruzione: '{istruzione}'."
             
         elif minuti_attesa > 0:
             orario_locale_attuale = datetime.now(timezone.utc).astimezone()
@@ -534,9 +563,11 @@ async def programma_task_autonomo(istruzione: str, minuti_attesa: int = 0, ora_r
             )
             return f"✅ Task autonomo armato per le {dt_obj.strftime('%H:%M:%S')}."
             
-        else: return "Errore: specificare minuti_attesa o ora_ricorrente."
+        else: 
+            return "Errore: specificare minuti_attesa o almeno un campo cron_*."
             
-    except Exception as e: return f"Errore critico nella pianificazione: {e}"
+    except Exception as e: 
+        return f"Errore critico nella pianificazione: {e}"
 
 @tool
 async def navigatore_web_integrato(istruzioni: str) -> str:
@@ -758,6 +789,88 @@ def elimina_task_programmato(parola_chiave: str) -> str:
         
     except Exception as e:
         return f"Errore durante l'eliminazione del task: {e}"
+
+@tool
+async def modifica_task_programmato(
+    parola_chiave: str, 
+    nuova_istruzione: str = "", 
+    nuovi_minuti_attesa: int = 0, 
+    cron_minute: str = "", 
+    cron_hour: str = "", 
+    cron_day: str = "", 
+    cron_month: str = "", 
+    cron_day_of_week: str = "",
+    cron_year: str = ""
+) -> str:
+    """
+    Modifica un task esistente cercando la sua parola chiave. 
+    Permette di aggiornare l'istruzione (cosa fare) e/o l'orario (quando farlo).
+    - Se non specifichi nuova_istruzione, verrà mantenuta quella vecchia.
+      ⚠️ IMPORTANTE: Se l'istruzione originale contiene frasi come "Ogni martedì alle 8", DEVI obbligatoriamente compilare `nuova_istruzione` con il testo aggiornato (es. "Ogni lunedì alle 7"), altrimenti il testo vecchio rimarrà nel database e creerà confusione in futuro!
+    - Se specifichi nuovi_minuti_attesa, cambierà in un task singolo tra N minuti.
+    - Se specifichi QUALSIASI dei campi cron_*, modificherà l'orario usando la sintassi cron di APScheduler.
+      Attenzione: compila tutti i campi cron necessari per la ricorrenza desiderata (es. cron_hour="9" e cron_minute="0").
+    - Se non specifichi NESSUN orario (niente minuti_attesa e niente campi cron), manterrà esattamente il trigger originale.
+    """
+    print(f"✏️ [TOOL: Scheduler] Richiesta modifica task per keyword: '{parola_chiave}'")
+    try:
+        from core.scheduler import scheduler, _esegui_agente_in_background
+        
+        chat_id_path = os.path.join("sandbox", "tg_chat_id.txt")
+        chat_id = ""
+        if os.path.exists(chat_id_path):
+            with open(chat_id_path, "r") as f:
+                chat_id = f.read().strip()
+                
+        jobs = scheduler.get_jobs()
+        target_job = None
+        for job in jobs:
+            testo_task = str(job.args[0]) if job.args and len(job.args) > 0 else ""
+            if parola_chiave.lower() in testo_task.lower():
+                target_job = job
+                break
+                
+        if not target_job:
+            return f"Nessun task trovato corrispondente alla parola chiave: '{parola_chiave}'."
+            
+        testo_originale = str(target_job.args[0]) if target_job.args and len(target_job.args) > 0 else ""
+        istruzione_finale = nuova_istruzione if nuova_istruzione.strip() else testo_originale
+        
+        # Salviamo il vecchio trigger per backup in caso di errore di parsing
+        vecchio_trigger = target_job.trigger
+        scheduler.remove_job(target_job.id)
+        
+        has_cron = any([cron_minute, cron_hour, cron_day, cron_month, cron_day_of_week, cron_year])
+        
+        if has_cron:
+            cron_kwargs = {}
+            if cron_minute: cron_kwargs['minute'] = cron_minute
+            if cron_hour: cron_kwargs['hour'] = cron_hour
+            if cron_day: cron_kwargs['day'] = cron_day
+            if cron_month: cron_kwargs['month'] = cron_month
+            if cron_day_of_week: cron_kwargs['day_of_week'] = cron_day_of_week
+            if cron_year: cron_kwargs['year'] = cron_year
+            
+            try:
+                scheduler.add_job(_esegui_agente_in_background, 'cron', args=[istruzione_finale, chat_id], **cron_kwargs)
+            except Exception as cron_err:
+                scheduler.add_job(_esegui_agente_in_background, trigger=vecchio_trigger, args=[testo_originale, chat_id])
+                return f"Errore di sintassi Cron: {cron_err}. Il task non è stato modificato ed è stato ripristinato."
+                
+            return f"✅ Task modificato con parametri cron: {cron_kwargs}. Nuova istruzione: '{istruzione_finale}'."
+            
+        elif nuovi_minuti_attesa > 0:
+            orario_locale_attuale = datetime.now(timezone.utc).astimezone()
+            dt_obj = orario_locale_attuale + timedelta(minutes=nuovi_minuti_attesa)
+            scheduler.add_job(_esegui_agente_in_background, 'date', run_date=dt_obj, args=[istruzione_finale, chat_id])
+            return f"✅ Task modificato: armato per le {dt_obj.strftime('%H:%M:%S')}. Nuova istruzione: '{istruzione_finale}'."
+            
+        else:
+            scheduler.add_job(_esegui_agente_in_background, trigger=vecchio_trigger, args=[istruzione_finale, chat_id])
+            return f"✅ Task modificato mantenendo l'orario originale. Nuova istruzione: '{istruzione_finale}'."
+            
+    except Exception as e:
+        return f"Errore durante la modifica del task: {e}"
     
 
 @tool

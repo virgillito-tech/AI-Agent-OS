@@ -26,7 +26,7 @@ from tools.agent_tools import (
     leggi_file_sistema, scrivi_o_copia_file, leggi_whatsapp, leggi_telegram_personale, 
     scatta_e_analizza_schermo, esegui_azione_mouse_tastiera, navigatore_web_integrato, 
     leggi_tutte_le_chat, leggi_pagina_web, crea_documento_pdf, 
-    leggi_documento, leggi_task_programmati, elimina_task_programmato, controlla_notifiche_discord, invia_documento_telegram,
+    leggi_documento, leggi_task_programmati, elimina_task_programmato, modifica_task_programmato, controlla_notifiche_discord, invia_documento_telegram,
     indicizza_cartella_personale, ricerca_nei_documenti_locali
 )
 
@@ -134,6 +134,7 @@ async def get_agent_executor(task_type: str = "reasoning"):
         leggi_pagina_web,
         leggi_task_programmati,
         elimina_task_programmato,
+        modifica_task_programmato,
         converti_documento,
         esplora_google_drive, 
         scarica_da_drive, 

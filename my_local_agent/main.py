@@ -403,6 +403,14 @@ async def chat_endpoint(
                                 tool_name = tc.get("name")
                                 if tool_name:
                                     yield f"data: {json.dumps({'type': 'reasoning', 'content': f'🛠️ Avvio strumento: {tool_name}'})}\n\n"
+                                    
+                        # Gestione dei modelli di ragionamento (R1, QwQ, ecc.)
+                        if hasattr(msg, "additional_kwargs") and "reasoning" in msg.additional_kwargs:
+                            reasoning_chunk = msg.additional_kwargs["reasoning"]
+                            if reasoning_chunk:
+                                final_text += reasoning_chunk
+                                yield f"data: {json.dumps({'type': 'reasoning', 'content': reasoning_chunk})}\n\n"
+
                         if msg.content:
                             if isinstance(msg.content, str):
                                 final_text += msg.content
@@ -428,11 +436,17 @@ async def chat_endpoint(
                     if tool_results_for_fallback:
                         yield f"data: {json.dumps({'type': 'reasoning', 'content': '🧠 Rielaborazione dati in corso...'})}\n\n"
                         testi_estratti = "\n".join(tool_results_for_fallback)
-                        chat_messages.append(SystemMessage(content=f"Dati estratti dai tool:\n{testi_estratti}\n\nUsa questi dati per rispondere all'ultima domanda."))
+                        chat_messages.append(HumanMessage(content=f"Dati estratti dai tool:\n{testi_estratti}\n\nUsa questi dati per rispondere all'ultima domanda."))
                     else:
                         yield f"data: {json.dumps({'type': 'reasoning', 'content': '🧠 Conversazione in corso...'})}\n\n"
                         
                     async for chunk in llm_fallback.astream(chat_messages):
+                            reasoning_chunk = chunk.additional_kwargs.get("reasoning", "") if hasattr(chunk, "additional_kwargs") else ""
+                            if reasoning_chunk:
+                                empty_chunks = 0  # Resetta se sta ragionando
+                                final_text += reasoning_chunk
+                                yield f"data: {json.dumps({'type': 'reasoning', 'content': reasoning_chunk})}\n\n"
+                                
                             if chunk.content:
                                 # Ghigliottina Anti-Spazio
                                 if not chunk.content.strip():
@@ -501,7 +515,7 @@ async def chat_sync_endpoint(
                 
                 if tool_results_for_fallback:
                     testi_estratti = "\n".join(tool_results_for_fallback)
-                    chat_messages.append(SystemMessage(content=f"Dati estratti dai tool:\n{testi_estratti}\n\nUsa questi dati per rispondere all'ultima domanda."))
+                    chat_messages.append(HumanMessage(content=f"Dati estratti dai tool:\n{testi_estratti}\n\nUsa questi dati per rispondere all'ultima domanda."))
                 
                 async for chunk in llm_fallback.astream(chat_messages):
                         if chunk.content:

@@ -100,6 +100,20 @@ async def start_engine(engine_type: str, model_name: str, port: int = 8080):
             # FIX: Disabilitiamo i blocchi <think> per evitare che Langchain e i tool call vengano inghiottiti dai modelli di reasoning (come QwQ o Qwen-R1)
             comando = [sys.executable, "-m", "mlx_lm", "server", "--model", model_name, "--port", str(port), "--chat-template-args", '{"enable_thinking":false}']
             
+            # --- GEMMA 4 MTP DRAFTER AUTO-RECOGNITION ---
+            if "gemma-4" in model_name.lower():
+                print("⚡ [GEMMA 4] Rilevato modello Gemma 4! Attivazione Multi-Token Prediction (MTP) in corso...")
+                # Mappatura automatica dei drafter in base al modello scelto
+                if "26b" in model_name.lower():
+                    draft_model = "mlx-community/gemma-4-26B-A4B-it-assistant-bf16"
+                elif "e4b" in model_name.lower():
+                    draft_model = "mlx-community/gemma-4-e4b-it-assistant-bf16"
+                else:
+                    draft_model = "mlx-community/gemma-4-9B-it-assistant-bf16"
+                
+                comando.extend(["--draft-model", draft_model])
+                print(f"⚡ [MTP ATTIVO] Decodifica Speculativa in uso con il drafter: {draft_model}")
+            
             try:
                 import mlx_turboquant
                 print(f"🚀 [BETA] TurboQuant ATTIVO: Ottimizzazione cache {tq_bits}-bit KV.")

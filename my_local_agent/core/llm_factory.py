@@ -28,7 +28,7 @@ async def get_llm(task_type: str = "reasoning", temperature: float = 0.0) -> Cha
     max_t = int(getattr(config, "MAX_TOKENS", 4096))
     tq_bits = int(os.getenv("TURBOQUANT_BITS", 3))
     
-    if engine == "mlx":
+    if engine in ["mlx", "mtplx"]:
         model_name = getattr(config, "MLX_FAST_MODEL_NAME", "mlx-community/Qwen2.5-3B-Instruct-4bit") if task_type == "fast" else getattr(config, "MLX_TEXT_MODEL_NAME", "mlx-community/Qwen2.5-14B-Instruct-4bit")
         
         server_active = False
@@ -42,13 +42,13 @@ async def get_llm(task_type: str = "reasoning", temperature: float = 0.0) -> Cha
             # che svuoterebbe la VRAM e causerebbe timeout o errori 404 durante l'inferenza.
             target_model = getattr(config, "MLX_TEXT_MODEL_NAME", "mlx-community/Qwen2.5-14B-Instruct-4bit")
         else:
-            print(f"⚠️ [LLM FACTORY] Server MLX non rilevato. Avvio automatico con {model_name}...")
-            await start_engine("mlx", model_name)
+            print(f"⚠️ [LLM FACTORY] Server {engine.upper()} non rilevato. Avvio automatico con {model_name}...")
+            await start_engine(engine, model_name)
             target_model = model_name
 
         key = (engine, target_model, temperature)
         if key not in _llm_cache:
-            if HAS_MLX_TQ:
+            if HAS_MLX_TQ and engine == "mlx":
                 print(f"🚀 [BETA] TurboQuant ATTIVO: Ottimizzazione {tq_bits}-bit KV.")
             _llm_cache[key] = ChatOpenAI(
                 model=target_model,

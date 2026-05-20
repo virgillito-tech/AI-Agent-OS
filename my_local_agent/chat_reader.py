@@ -1,6 +1,8 @@
 # chat_reader.py
 import os
+import asyncio
 import config
+
 
 # --- LETTORE TELEGRAM (Risolto problema Thread asincroni) ---
 def get_unread_telegram() -> str:

@@ -98,21 +98,34 @@ async def start_engine(engine_type: str, model_name: str, port: int = 8080):
 
             # Comando standard raccomandato dai log.
             # FIX: Disabilitiamo i blocchi <think> per evitare che Langchain e i tool call vengano inghiottiti dai modelli di reasoning (come QwQ o Qwen-R1)
-            comando = [sys.executable, "-m", "mlx_lm", "server", "--model", model_name, "--port", str(port), "--chat-template-args", '{"enable_thinking":false}']
+            # Utilizziamo mlx_server_patch.py per applicare runtime fix di compatibilità a modelli Gemma 4
+            patch_script = os.path.join(os.path.dirname(os.path.dirname(__file__)), "mlx_server_patch.py")
+            if os.path.exists(patch_script):
+                comando = [sys.executable, patch_script, "--model", model_name, "--port", str(port), "--chat-template-args", '{"enable_thinking":false}']
+            else:
+                comando = [sys.executable, "-m", "mlx_lm", "server", "--model", model_name, "--port", str(port), "--chat-template-args", '{"enable_thinking":false}']
             
             # --- GEMMA 4 MTP DRAFTER AUTO-RECOGNITION ---
-            if "gemma-4" in model_name.lower():
-                print("⚡ [GEMMA 4] Rilevato modello Gemma 4! Attivazione Multi-Token Prediction (MTP) in corso...")
-                # Mappatura automatica dei drafter in base al modello scelto
-                if "26b" in model_name.lower():
-                    draft_model = "mlx-community/gemma-4-26B-A4B-it-assistant-bf16"
-                elif "e4b" in model_name.lower():
-                    draft_model = "mlx-community/gemma-4-e4b-it-assistant-bf16"
-                else:
-                    draft_model = "mlx-community/gemma-4-9B-it-assistant-bf16"
-                
-                comando.extend(["--draft-model", draft_model])
-                print(f"⚡ [MTP ATTIVO] Decodifica Speculativa in uso con il drafter: {draft_model}")
+            # NOTA: Disabilitato temporaneamente in quanto l'architettura gemma4_assistant non è ancora supportata nativamente da mlx_lm.
+            # Se abilitato, mlx_lm va in crash con "ValueError: Model type gemma4_assistant not supported."
+            #
+            # if "gemma-4" in model_name.lower():
+            #     draft_model = None
+            #     if "26b" in model_name.lower():
+            #         draft_model = "mlx-community/gemma-4-26B-A4B-it-assistant-bf16"
+            #     elif "e4b" in model_name.lower():
+            #         draft_model = "mlx-community/gemma-4-e4b-it-assistant-bf16"
+            #     elif "e2b" in model_name.lower():
+            #         draft_model = "mlx-community/gemma-4-e2b-it-assistant-bf16"
+            #     elif "31b" in model_name.lower():
+            #         draft_model = "mlx-community/gemma-4-31b-it-assistant-bf16"
+            #     
+            #     if draft_model:
+            #         print("⚡ [GEMMA 4] Rilevato modello Gemma 4 supportato! Attivazione Multi-Token Prediction (MTP)...")
+            #         comando.extend(["--draft-model", draft_model])
+            #         print(f"⚡ [MTP ATTIVO] Decodifica Speculativa in uso con il drafter: {draft_model}")
+            #     else:
+            #         print("⚠️ [GEMMA 4] Rilevato modello Gemma 4, ma la taglia del modello non è mappata per speculative decoding. Avvio standard.")
             
             try:
                 import mlx_turboquant
@@ -156,6 +169,28 @@ async def start_engine(engine_type: str, model_name: str, port: int = 8080):
 
             print(f"⏳ Avvio demone Ollama (eseguibile: {ollama_path})...")
             check_port = 11434
+        elif engine_type == "mtplx":
+            if sys.platform != "darwin" or platform.machine() != "arm64":
+                return False, "Il motore MTPLX è supportato esclusivamente su Mac Apple Silicon (M1/M2/M3/M4/M5)."
+
+            # Trova l'eseguibile mtplx nella stessa directory dell'eseguibile python attuale
+            mtplx_bin = os.path.join(os.path.dirname(sys.executable), "mtplx")
+            if not os.path.exists(mtplx_bin):
+                mtplx_bin = shutil.which("mtplx") or "mtplx"
+
+            # Costruiamo il comando per avviare il server OpenAI compatibile di MTPLX
+            comando = [
+                mtplx_bin,
+                "quickstart",
+                "--model", model_name,
+                "--port", str(port),
+                "--no-stats-footer",
+                "--download",
+                "--yes"
+            ]
+
+            print(f"⏳ Avvio server MTPLX per {model_name}...")
+            check_port = port
         else:
             return False, "Motore non supportato"
 

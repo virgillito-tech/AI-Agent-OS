@@ -16,17 +16,23 @@ DOCUMENTS_COLLECTION = "local_documents"
 
 VECTOR_SIZE = 768
 
+_embeddings_cache = {}
+
 def get_embeddings():
+    global _embeddings_cache
     motore_attivo = getattr(config, "ACTIVE_ENGINE", "ollama")
-    if motore_attivo == "ollama":
-        from langchain_ollama import OllamaEmbeddings
-        return OllamaEmbeddings(model="nomic-embed-text")
-    else:
-        from langchain_huggingface import HuggingFaceEmbeddings
-        return HuggingFaceEmbeddings(
-            model_name="sentence-transformers/paraphrase-multilingual-mpnet-base-v2",
-            model_kwargs={'device': 'mps'}
-        )
+    if motore_attivo not in _embeddings_cache:
+        print(f"🧠 [MEMORY] Inizializzazione embeddings per il motore: {motore_attivo}...")
+        if motore_attivo == "ollama":
+            from langchain_ollama import OllamaEmbeddings
+            _embeddings_cache[motore_attivo] = OllamaEmbeddings(model="nomic-embed-text")
+        else:
+            from langchain_huggingface import HuggingFaceEmbeddings
+            _embeddings_cache[motore_attivo] = HuggingFaceEmbeddings(
+                model_name="sentence-transformers/paraphrase-multilingual-mpnet-base-v2",
+                model_kwargs={'device': 'mps'}
+            )
+    return _embeddings_cache[motore_attivo]
 
 def _init_collection(client: QdrantClient, name: str):
     if not client.collection_exists(name):

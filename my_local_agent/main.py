@@ -64,7 +64,6 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, File, UploadFile, Form
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 from fastapi.middleware.cors import CORSMiddleware
-from faster_whisper import WhisperModel
 from fastapi.responses import StreamingResponse
 
 from core.listener import avvia_listener
@@ -106,9 +105,16 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, 
 os.makedirs("temp_uploads", exist_ok=True)
 os.makedirs("sandbox", exist_ok=True)
 
-print("Caricamento modello Whisper...")
-whisper_model = WhisperModel("base", device="auto")
-print("Whisper pronto!")
+_whisper_model = None
+
+def get_whisper_model():
+    global _whisper_model
+    if _whisper_model is None:
+        print("Caricamento lazy del modello Whisper...")
+        from faster_whisper import WhisperModel
+        _whisper_model = WhisperModel("base", device="auto")
+        print("Whisper pronto!")
+    return _whisper_model
 
 @app.get("/api/setup/health")
 async def health_check():
@@ -314,16 +320,17 @@ async def get_available_models(engine: str = "ollama"):
                     return {"models": [m["name"] for m in res.json().get("models", []) if "embed" not in m["name"].lower()]}
         except:
             return {"models": [], "error": "Ollama non raggiungibile."}
-    elif engine == "mlx":
+    elif engine in ["mlx", "mtplx"]:
         cache_dir = os.path.expanduser("~/.cache/huggingface/hub")
         downloaded = [d.replace("models--", "").replace("--", "/") for d in os.listdir(cache_dir) if d.startswith("models--")] if os.path.exists(cache_dir) else []
-        return {"models": sorted(list(set(["mlx-community/Qwen3.5-9B-MLX-4bit"] + downloaded)))}
+        default_model = "mlx-community/Qwen3.5-9B-MLX-4bit" if engine == "mlx" else "Youssofal/Qwen3.6-27B-MTPLX-Optimized"
+        return {"models": sorted(list(set([default_model] + downloaded)))}
     return {"models": []}
 
 @app.post("/api/engine/start")
 async def api_start_engine(engine: str = Form(...), model: str = Form(None)):
     model_name = model or config.TEXT_MODEL_NAME
-    if engine == "mlx":
+    if engine in ["mlx", "mtplx"]:
         config.MLX_TEXT_MODEL_NAME = model_name
     else:
         config.TEXT_MODEL_NAME = model_name
@@ -343,7 +350,7 @@ async def transcribe_audio(audio: UploadFile = File(...)):
         with tempfile.NamedTemporaryFile(delete=False, suffix=".webm") as tmp:
             tmp.write(await audio.read())
             tmp_path = tmp.name
-        segments, _ = whisper_model.transcribe(tmp_path, beam_size=5, language="it")
+        segments, _ = get_whisper_model().transcribe(tmp_path, beam_size=5, language="it")
         os.remove(tmp_path)
         return {"text": "".join([s.text for s in segments]).strip()}
     except Exception as e:
@@ -469,7 +476,17 @@ async def chat_endpoint(
 
             except Exception as e:
                 yield f"data: {json.dumps({'type': 'error', 'content': f'Errore critico: {str(e)}'})}\n\n"
-            yield "data: [DONE]\n\n"
+            finally:
+                yield "data: [DONE]\n\n"
+                import gc
+                gc.collect()
+                if getattr(config, "ACTIVE_ENGINE", "ollama") in ["mlx", "mtplx"] and sys.platform == "darwin":
+                    try:
+                        import mlx.core as mx
+                        mx.metal.clear_cache()
+                        print("🧹 [MEMORY] Cache MLX liberata dopo la generazione streaming.")
+                    except ImportError:
+                        pass
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
@@ -534,6 +551,16 @@ async def chat_sync_endpoint(
         return {"response": final_message, "status": "ok"}
     except Exception as e:
         return {"response": f"Errore interno: {str(e)}", "status": "error"}
+    finally:
+        import gc
+        gc.collect()
+        if getattr(config, "ACTIVE_ENGINE", "ollama") in ["mlx", "mtplx"] and sys.platform == "darwin":
+            try:
+                import mlx.core as mx
+                mx.metal.clear_cache()
+                print("🧹 [MEMORY] Cache MLX liberata dopo la generazione sincrona.")
+            except ImportError:
+                pass
 
 if __name__ == "__main__":
     import uvicorn

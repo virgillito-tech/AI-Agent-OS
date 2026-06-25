@@ -64,11 +64,21 @@ jobs:
           ARTIFACT_NAME: ${{ matrix.artifact_name }}
         run: python build_exe.py
 
+      - name: Compress Executable (macOS / Linux)
+        if: matrix.os != 'windows-latest'
+        run: tar -czf ${{ matrix.asset_name }}.tar.gz -C dist ${{ matrix.artifact_name }}
+
+      - name: Compress Executable (Windows)
+        if: matrix.os == 'windows-latest'
+        run: Compress-Archive -Path dist/${{ matrix.artifact_name }} -DestinationPath ${{ matrix.asset_name }}.zip
+
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.asset_name }}
-          path: my_local_agent/dist/${{ matrix.artifact_name }}
+          path: |
+            *.tar.gz
+            *.zip
 
   release:
     needs: build

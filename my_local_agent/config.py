@@ -5,10 +5,16 @@ import os
 # Forza l'uso di MLX per sfruttare TurboQuant
 ACTIVE_ENGINE = "mlx"
 
-# --- MODELLI MLX (Ottimizzati TurboQuant) ---
-MLX_FAST_MODEL_NAME = os.getenv("MLX_FAST_MODEL_NAME", "Qwen3.5-4B-MLX-8bit")
-MLX_TEXT_MODEL_NAME = os.getenv("MLX_TEXT_MODEL_NAME", "Qwen3.5-9B-MLX-4bit")
-MLX_VISION_MODEL_NAME = os.getenv("MLX_VISION_MODEL_NAME", "Qwen3.5-9B-MLX-4bit")
+# --- MODELLI MLX (Ottimizzati TurboQuant & PolarQuant) ---
+MLX_FAST_MODEL_NAME = os.getenv("MLX_FAST_MODEL_NAME", "Youssofal/Qwen3.5-4B-MTPLX-Optimized-Speed")
+MLX_TEXT_MODEL_NAME = os.getenv("MLX_TEXT_MODEL_NAME", "mlx-community/gemma-4-12B-it-qat-4bit")
+MLX_VISION_MODEL_NAME = os.getenv("MLX_VISION_MODEL_NAME", "mlx-community/Qwen2-VL-2B-Instruct-4bit")
+
+# --- SPECULATIVE DECODING (UAG / dflash) ---
+MLX_DRAFT_MODEL_NAME = os.getenv("MLX_DRAFT_MODEL_NAME", "")
+
+# --- ORCHESTRATOR ---
+ORCHESTRATOR_MODEL = os.getenv("ORCHESTRATOR_MODEL", "mlx-community/Qwen2.5-3B-Instruct-4bit")
 
 MLX_BASE_URL = os.getenv("MLX_BASE_URL", "http://localhost:8080")
 

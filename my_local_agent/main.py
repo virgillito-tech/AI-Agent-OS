@@ -323,7 +323,7 @@ async def get_available_models(engine: str = "ollama"):
     elif engine in ["mlx", "mtplx"]:
         cache_dir = os.path.expanduser("~/.cache/huggingface/hub")
         downloaded = [d.replace("models--", "").replace("--", "/") for d in os.listdir(cache_dir) if d.startswith("models--")] if os.path.exists(cache_dir) else []
-        default_model = "mlx-community/Qwen3.5-9B-MLX-4bit" if engine == "mlx" else "Youssofal/Qwen3.6-27B-MTPLX-Optimized"
+        default_model = "mlx-community/DeepSeek-R1-Distill-Qwen-14B-4bit" if engine == "mlx" else "Youssofal/Qwen3.6-27B-MTPLX-Optimized"
         return {"models": sorted(list(set([default_model] + downloaded)))}
     return {"models": []}
 
@@ -367,6 +367,35 @@ def _save_upload(file: UploadFile) -> str:
 # CHAT STREAMING E SINCRONO
 # ---------------------------------------------------------------------------
 
+async def orchestrator_decide(message: str) -> str:
+    """Classifica l'input dell'utente usando un modello MLX in-memory ultraleggero."""
+    import mlx.core as mx
+    try:
+        from mlx_lm import load, generate
+    except ImportError:
+        return "reasoning"
+        
+    print("🧠 [ORCHESTRATOR] Avvio analisi intenti con modello MLX leggero in-memory...")
+    model_name = getattr(config, "ORCHESTRATOR_MODEL", "mlx-community/Qwen2.5-3B-Instruct-4bit")
+    try:
+        model, tokenizer = load(model_name)
+        prompt = f"Classifica la seguente richiesta dell'utente.\nRispondi SOLO con la parola 'FAST' se è una richiesta di ricerca, informazioni, conversazione semplice, lettura web o uso di strumenti. Rispondi SOLO con 'REASONING' se richiede generazione di codice strutturato, ragionamento matematico/complesso o analisi logica profonda.\n\nUtente: {message}\nClassificazione:"
+        response = generate(model, tokenizer, prompt=prompt, max_tokens=10)
+        
+        # Pulizia immediata VRAM
+        del model
+        del tokenizer
+        import gc
+        gc.collect()
+        mx.metal.clear_cache()
+        
+        if "fast" in response.lower():
+            return "fast"
+        return "reasoning"
+    except Exception as e:
+        print(f"⚠️ [ORCHESTRATOR] Errore: {e}. Fallback su reasoning.")
+        return "reasoning"
+
 @app.post("/api/chat")
 async def chat_endpoint(
     message: str = Form(...),
@@ -374,7 +403,15 @@ async def chat_endpoint(
     engine: str = Form("ollama"),
     mode: str = Form("agent"),
 ):
-    config.ACTIVE_ENGINE = engine
+    if mode == "agent":
+        decision = await orchestrator_decide(message)
+        task_type = decision
+        config.ACTIVE_ENGINE = "mtplx" if decision == "fast" else "mlx"
+        print(f"🔀 [ORCHESTRATOR] Decisione: {decision.upper()} -> Motore selezionato: {config.ACTIVE_ENGINE}")
+    else:
+        config.ACTIVE_ENGINE = engine
+        task_type = "fast" if mode == "fast" else "reasoning"
+        
     await compatta_cronologia_se_necessario()
 
     content_to_save = message
@@ -391,7 +428,6 @@ async def chat_endpoint(
     add_to_global_history("user", content_to_save, source="web")
     langchain_messages = build_langchain_messages_from_global()
     
-    task_type = "fast" if mode == "fast" else "reasoning"
     agent = await get_agent_executor(task_type=task_type)
     inputs = {"messages": langchain_messages}
 
@@ -496,12 +532,19 @@ async def chat_sync_endpoint(
     mode: str = Form("agent"),
     engine: str = Form("ollama")
 ):
-    config.ACTIVE_ENGINE = engine
+    if mode == "agent":
+        decision = await orchestrator_decide(message)
+        task_type = decision
+        config.ACTIVE_ENGINE = "mtplx" if decision == "fast" else "mlx"
+        print(f"🔀 [ORCHESTRATOR] Decisione: {decision.upper()} -> Motore selezionato: {config.ACTIVE_ENGINE}")
+    else:
+        config.ACTIVE_ENGINE = engine
+        task_type = "fast" if mode == "fast" else "reasoning"
+        
     await compatta_cronologia_se_necessario()
     try:
         add_to_global_history("user", message, source="telegram")
         
-        task_type = "fast" if mode == "fast" else "reasoning"
         agent = await get_agent_executor(task_type=task_type)
         langchain_messages = build_langchain_messages_from_global()
         

@@ -93,12 +93,14 @@ def esplora_file_sistema(percorso: str = ".") -> str:
         return f"Errore di accesso alla cartella: {e}"
 
 @tool
-def ricerca_web_affidabile(query: str, solo_notizie_recenti: bool = False) -> str:
+def ricerca_web_affidabile(query: str, solo_notizie_recenti: bool | str = False) -> str:
     """
     Esegue una ricerca su Internet.
     IMPOSTA 'solo_notizie_recenti=True' SE l'utente chiede "ultime novità", "notizie di oggi" o eventi recenti.
     Usa query brevi e concise.
     """
+    if isinstance(solo_notizie_recenti, str):
+        solo_notizie_recenti = solo_notizie_recenti.lower() in ("true", "yes", "1", "t")
     print(f"\n🌐 [TOOL: Ricerca Web] Avvio ricerca per: '{query}' (Recenti: {solo_notizie_recenti})")
     try:
         from datetime import datetime
@@ -144,18 +146,19 @@ def ricerca_web_affidabile(query: str, solo_notizie_recenti: bool = False) -> st
         return f"Errore di rete durante la ricerca web: {str(e)}"
     
 
-def _get_vision_llm():
-    from langchain_ollama import ChatOllama
-    return ChatOllama(model=config.VISION_MODEL_NAME, temperature=0)
-
-# --- TOOL VISIONE ASYNC (PER TURBOQUANT) ---
+# --- TOOL VISIONE ASYNC (CROSS-PLATFORM) ---
 async def process_image(prompt_text: str, base64_image: str) -> str:
-    print(f"👁️ [TOOL: Visione] Analisi immagine con TurboQuant...")
-    # Fondamentale l'await per attivare la cache compressa
-    vision_llm = await get_llm(task_type="reasoning") 
+    print(f"👁️ [TOOL: Visione] Inizializzazione motore visivo...")
+    from core.llm_factory import get_vision_llm
+    from core.model_manager import start_vision_engine_if_needed
+    
+    # Assicura l'avvio del server dedicato MLX VLM (su Mac), altrimenti no-op
+    await start_vision_engine_if_needed(port=8081)
+    
+    vision_llm = get_vision_llm() 
     message = HumanMessage(content=[
         {"type": "text", "text": f"Analista visivo: {prompt_text}"},
-        {"type": "image_url", "image_url": f"data:image/jpeg;base64,{base64_image}"},
+        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}},
     ])
     res = await vision_llm.ainvoke([message])
     return res.content

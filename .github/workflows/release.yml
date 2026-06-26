@@ -77,8 +77,8 @@ jobs:
         with:
           name: ${{ matrix.asset_name }}
           path: |
-            *.tar.gz
-            *.zip
+            my_local_agent/*.tar.gz
+            my_local_agent/*.zip
 
   release:
     needs: build

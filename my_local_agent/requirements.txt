@@ -61,7 +61,6 @@ mss
 # --- Machine Learning e Motori Locali ---
 mlx-lm; sys_platform == "darwin"
 mlx-vlm; sys_platform == "darwin"
-mlx_turboquant; sys_platform == "darwin"
 torch
 diffusers
 transformers

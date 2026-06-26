@@ -369,8 +369,11 @@ def _save_upload(file: UploadFile) -> str:
 
 async def orchestrator_decide(message: str) -> str:
     """Classifica l'input dell'utente usando un modello MLX in-memory ultraleggero."""
-    import mlx.core as mx
+    if sys.platform != "darwin":
+        return "reasoning"
+        
     try:
+        import mlx.core as mx
         from mlx_lm import load, generate
     except ImportError:
         return "reasoning"

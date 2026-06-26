@@ -68,6 +68,6 @@ transformers
 # --- Strumenti Aggiuntivi (Browser, Social, Video) ---
 selenium
 webdriver-manager
-moviepy
+moviepy<2.0.0
 tweepy
 requests

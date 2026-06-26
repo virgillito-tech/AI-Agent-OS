@@ -64,3 +64,10 @@ mlx-vlm; sys_platform == "darwin"
 torch
 diffusers
 transformers
+
+# --- Strumenti Aggiuntivi (Browser, Social, Video) ---
+selenium
+webdriver-manager
+moviepy
+tweepy
+requests

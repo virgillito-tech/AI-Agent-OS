@@ -23,6 +23,9 @@ def build():
         '--onefile',
         f'--add-data=prompts{sep}prompts',
         f'--add-data=.env{sep}.env',
+        '--copy-metadata=imageio',
+        '--copy-metadata=tqdm',
+        '--copy-metadata=moviepy',
         '--clean'
     ]
     
